@@ -8,12 +8,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // vitest doesn't need them pre-built into `dist/`. Vite's import-analysis
 // resolver ignores `resolve.conditions` for npm packages (the deps optimizer
 // path), so a literal alias is the reliable mechanism. tsx for backend dev
-// gets the same effect via NODE_OPTIONS=--conditions=source (see scripts/dev.ts).
+// gets the same effect via NODE_OPTIONS=--conditions=source (see scripts/guardian/dev.ts).
 const workspaceAliases = {
   '@': resolve(__dirname, './src'),
   '@traderalice/ibkr': resolve(__dirname, './packages/ibkr/src/index.ts'),
   '@traderalice/opentypebb/server': resolve(__dirname, './packages/opentypebb/src/server.ts'),
   '@traderalice/opentypebb': resolve(__dirname, './packages/opentypebb/src/index.ts'),
+  '@traderalice/uta-protocol': resolve(__dirname, './packages/uta-protocol/src/index.ts'),
 }
 
 export default defineConfig({
@@ -29,7 +30,7 @@ export default defineConfig({
         test: {
           name: 'node',
           environment: 'node',
-          include: ['src/**/*.spec.*', 'packages/**/*.spec.*', 'electron/**/*.spec.*'],
+          include: ['src/**/*.spec.*', 'packages/**/*.spec.*', 'services/**/*.spec.*', 'electron/**/*.spec.*'],
           exclude: ['**/*.e2e.spec.*', '**/*.bbProvider.spec.*', '**/node_modules/**'],
         },
       },

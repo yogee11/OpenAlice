@@ -10,12 +10,21 @@ import { tool, type Tool } from 'ai'
 import { z } from 'zod'
 import Decimal from 'decimal.js'
 import { Contract, UNSET_DECIMAL, coerceSecType } from '@traderalice/ibkr'
-import type { UTAManager } from '@/domain/trading/uta-manager.js'
-import { UnifiedTradingAccount } from '@/domain/trading/UnifiedTradingAccount.js'
-import { BrokerError, type OpenOrder } from '@/domain/trading/brokers/types.js'
-import type { FxService } from '@/domain/trading/fx-service.js'
-import { normalizeBrokerSearchPattern } from '@/domain/trading/contract-search-rules.js'
-import '@/domain/trading/contract-ext.js'
+import { BrokerError, type OpenOrder } from '@traderalice/uta-protocol'
+import type { UTAManagerSDK } from '@/services/uta-client/index.js'
+import { normalizeBrokerSearchPattern } from '@traderalice/uta-protocol'
+// `Contract.aliceId` declaration merge is registered as a side-effect
+// of `@traderalice/uta-protocol`'s barrel — already pulled in above.
+
+/** aliceId is "{utaId}|{nativeKey}" — split locally so the tool can pick
+ *  the owning account before any HTTP call. Pure utility, no broker
+ *  knowledge required (broker-specific decoding happens server-side on
+ *  the `aliceId`-aware routes). */
+function parseAliceId(aliceId: string): { utaId: string; nativeKey: string } | null {
+  const idx = aliceId.indexOf('|')
+  if (idx <= 0) return null
+  return { utaId: aliceId.slice(0, idx), nativeKey: aliceId.slice(idx + 1) }
+}
 
 /** Classify a broker error into a structured response for AI consumption. */
 function handleBrokerError(err: unknown): { error: string; code: string; transient: boolean; hint: string } {
@@ -100,12 +109,12 @@ const positiveNumeric = z
   )
   .transform((v) => (v === '' ? undefined : v))
 
-export function createTradingTools(manager: UTAManager, fxService?: FxService): Record<string, Tool> {
+export function createTradingTools(manager: UTAManagerSDK): Record<string, Tool> {
   return {
     listUTAs: tool({
       description: 'List all registered trading accounts with their id, provider, label, and capabilities.',
       inputSchema: z.object({}),
-      execute: () => manager.listUTAs(),
+      execute: async () => await manager.listUTAs(),
     }),
 
     searchContracts: tool({
@@ -129,7 +138,7 @@ hitting the broker, which otherwise expects the bare base ticker.`,
         if (!brokerPattern) return { results: [], message: 'Empty pattern.' }
         // Source-scoped: when the caller pinned an account, only that one is
         // hit; otherwise fan out to all configured accounts.
-        const targets = manager.resolve(source)
+        const targets = await manager.resolve(source)
         if (targets.length === 0) return { error: 'No accounts available.' }
         const all: Array<Record<string, unknown>> = []
         const settled = await Promise.allSettled(
@@ -154,22 +163,24 @@ hitting the broker, which otherwise expects the bare base ticker.`,
         currency: z.string().optional().describe('Currency filter'),
       }),
       execute: async ({ source, symbol, aliceId, secType, currency }) => {
-        const uta = manager.resolveOne(source)
-        // When aliceId is provided, expand it via the broker's native-key
-        // resolver so the broker actually sees `localSymbol`/`symbol` —
-        // bare `query.aliceId = aliceId` is invisible to broker resolution.
-        let query: Contract
-        try {
-          query = aliceId ? uta.contractFromAliceId(aliceId) : new Contract()
-        } catch (err) {
-          return handleBrokerError(err)
-        }
+        const uta = await manager.resolveOne(source)
+        // Tool only assembles a Contract shell here — aliceId expansion
+        // is now done inside `UnifiedTradingAccount.getContractDetails`
+        // (and identically by the UTA HTTP route), so this code path is
+        // the same whether `manager` is the real in-process UTAManager
+        // or the SDK.
+        const query = new Contract()
+        if (aliceId) query.aliceId = aliceId
         if (symbol) query.symbol = symbol
         if (secType) query.secType = coerceSecType(secType)
         if (currency) query.currency = currency
-        const details = await uta.getContractDetails(query)
-        if (!details) return { error: 'No contract details found.' }
-        return { source: uta.id, ...details }
+        try {
+          const details = await uta.getContractDetails(query)
+          if (!details) return { error: 'No contract details found.' }
+          return { source: uta.id, ...details }
+        } catch (err) {
+          return handleBrokerError(err)
+        }
       },
     }),
 
@@ -180,7 +191,7 @@ If this tool returns an error with transient=true, wait a few seconds and retry 
         source: z.string().optional().describe(sourceDesc(false)),
       }),
       execute: async ({ source }) => {
-        const targets = manager.resolve(source)
+        const targets = await manager.resolve(source)
         if (targets.length === 0) return { error: 'No accounts available.' }
         try {
           const results = await Promise.all(targets.map(async (uta) => ({ source: uta.id, ...await uta.getAccount() })))
@@ -199,8 +210,28 @@ If this tool returns an error with transient=true, wait a few seconds and retry 
         symbol: z.string().optional().describe('Filter by ticker, or omit for all'),
       }),
       execute: async ({ source, symbol }) => {
-        const targets = manager.resolve(source)
+        const targets = await manager.resolve(source)
         if (targets.length === 0) return { positions: [], message: 'No accounts available.' }
+        // FX rates table — UTA's /fx-rates collects every currency in
+        // use server-side and returns a flat lookup. Locally we treat
+        // missing rates as 1.0 (the broker probably reported a USD-side
+        // value already) and accumulate any warnings the rate carries.
+        const fxLookup = new Map<string, number>()
+        const fxWarningsFromRates: string[] = []
+        try {
+          const rates = await manager.getFxRates()
+          for (const r of rates) {
+            fxLookup.set(r.currency, r.rate)
+            if (r.source === 'default' || r.source === 'fallback') {
+              fxWarningsFromRates.push(`${r.currency} rate using ${r.source} table`)
+            }
+          }
+        } catch { /* if /fx-rates is unreachable, fall through with empty map */ }
+        const fxToUsd = (amount: string, currency: string): string => {
+          if (currency === 'USD') return amount
+          const rate = fxLookup.get(currency) ?? 1
+          return new Decimal(amount).mul(rate).toString()
+        }
         try {
           const allPositions: Array<Record<string, unknown>> = []
           const fxWarnings: string[] = []
@@ -212,22 +243,12 @@ If this tool returns an error with transient=true, wait a few seconds and retry 
             let totalMarketValueUsd = new Decimal(0)
             const posUsdValues: Decimal[] = []
             for (const pos of positions) {
-              if (fxService && pos.currency !== 'USD') {
-                const r = await fxService.convertToUsd(pos.marketValue, pos.currency)
-                posUsdValues.push(new Decimal(r.usd))
-                if (r.fxWarning && !fxWarnings.includes(r.fxWarning)) fxWarnings.push(r.fxWarning)
-              } else {
-                posUsdValues.push(new Decimal(pos.marketValue))
-              }
+              posUsdValues.push(new Decimal(fxToUsd(pos.marketValue, pos.currency)))
               totalMarketValueUsd = totalMarketValueUsd.plus(posUsdValues[posUsdValues.length - 1])
             }
 
             // Account netLiq in USD for equity percentage
-            let netLiqUsd = new Decimal(accountInfo.netLiquidation)
-            if (fxService && accountInfo.baseCurrency !== 'USD') {
-              const r = await fxService.convertToUsd(accountInfo.netLiquidation, accountInfo.baseCurrency)
-              netLiqUsd = new Decimal(r.usd)
-            }
+            const netLiqUsd = new Decimal(fxToUsd(accountInfo.netLiquidation, accountInfo.baseCurrency))
 
             let idx = 0
             for (const pos of positions) {
@@ -246,7 +267,8 @@ If this tool returns an error with transient=true, wait a few seconds and retry 
             }
           }
           if (allPositions.length === 0) return { positions: [], message: 'No open positions.' }
-          if (fxWarnings.length > 0) return { positions: allPositions, fxWarnings }
+          const allWarnings = [...new Set([...fxWarnings, ...fxWarningsFromRates])]
+          if (allWarnings.length > 0) return { positions: allPositions, fxWarnings: allWarnings }
           return allPositions
         } catch (err) {
           return handleBrokerError(err)
@@ -264,10 +286,14 @@ If this tool returns an error with transient=true, wait a few seconds and retry 
         groupBy: z.enum(['contract']).optional().describe('Group orders by contract (aliceId)'),
       }),
       execute: async ({ source, orderIds, groupBy }) => {
-        const targets = manager.resolve(source)
+        const targets = await manager.resolve(source)
         if (targets.length === 0) return []
         try {
           const summaries = (await Promise.all(targets.map(async (uta) => {
+            // SDK's getPendingOrderIds is a no-op returning []; the real
+            // UnifiedTradingAccount returns the actual pending list. Both
+            // satisfy the same call site so this works for Phase A's
+            // dual-impl world.
             const ids = orderIds ?? uta.getPendingOrderIds().map(p => p.orderId)
             const orders = await uta.getOrders(ids)
             return orders.map((o, i) => summarizeOrder(o, uta.id, ids[i]))
@@ -297,16 +323,20 @@ If this tool returns an error with transient=true, wait a few seconds and retry 
         source: z.string().optional().describe(sourceDesc(false)),
       }),
       execute: async ({ aliceId, source }) => {
-        // aliceId is UTA-scoped (`{utaId}|{nativeKey}`); route directly to the
-        // owning UTA. Fall back to caller-supplied `source` if given (allows
-        // overrides / sanity-check). `contractFromAliceId` cross-validates.
-        const parsed = UnifiedTradingAccount.parseAliceId(aliceId)
+        // aliceId is UTA-scoped (`{utaId}|{nativeKey}`); route directly to
+        // the owning UTA. Fall back to caller-supplied `source` if given
+        // (allows overrides / sanity-check). Server-side decoding via the
+        // POST /quote route does the broker-specific contract reconstruction.
+        const parsed = parseAliceId(aliceId)
         if (!parsed) {
           return { error: `Invalid aliceId "${aliceId}". Expected format: "accountId|nativeKey".` }
         }
         try {
-          const uta = manager.resolveOne(source ?? parsed.utaId)
-          const contract = uta.contractFromAliceId(aliceId)
+          const uta = await manager.resolveOne(source ?? parsed.utaId)
+          // Same as getContractDetails — aliceId expansion lives inside
+          // UnifiedTradingAccount.getQuote (and the route), so the tool
+          // just hands over the aliceId stub.
+          const contract = Object.assign(new Contract(), { aliceId })
           return { source: uta.id, ...await uta.getQuote(contract) }
         } catch (err) {
           return handleBrokerError(err)
@@ -319,7 +349,7 @@ If this tool returns an error with transient=true, wait a few seconds and retry 
 If this tool returns an error with transient=true, wait a few seconds and retry once before reporting to the user.`,
       inputSchema: z.object({ source: z.string().optional().describe(sourceDesc(false)) }),
       execute: async ({ source }) => {
-        const targets = manager.resolve(source)
+        const targets = await manager.resolve(source)
         if (targets.length === 0) return { error: 'No accounts available.' }
         try {
           const results = await Promise.all(targets.map(async (uta) => ({ source: uta.id, ...await uta.getMarketClock() })))
@@ -338,11 +368,11 @@ IMPORTANT: Check this BEFORE making new trading decisions.`,
         limit: z.number().int().positive().optional().describe('Number of recent commits (default: 10)'),
         symbol: z.string().optional().describe('Filter commits by symbol'),
       }),
-      execute: ({ source, limit, symbol }) => {
-        const targets = manager.resolve(source)
+      execute: async ({ source, limit, symbol }) => {
+        const targets = await manager.resolve(source)
         const allEntries: Array<Record<string, unknown>> = []
         for (const uta of targets) {
-          for (const entry of uta.log({ limit, symbol })) allEntries.push({ source: uta.id, ...entry })
+          for (const entry of await uta.log({ limit, symbol })) allEntries.push({ source: uta.id, ...entry })
         }
         allEntries.sort((a, b) => new Date(b.timestamp as string).getTime() - new Date(a.timestamp as string).getTime())
         return limit ? allEntries.slice(0, limit) : allEntries
@@ -352,9 +382,9 @@ IMPORTANT: Check this BEFORE making new trading decisions.`,
     tradingShow: tool({
       description: 'View details of a specific trading commit (like "git show <hash>").',
       inputSchema: z.object({ hash: z.string().describe('Commit hash (8 characters)') }),
-      execute: ({ hash }) => {
-        for (const uta of manager.resolve()) {
-          const commit = uta.show(hash)
+      execute: async ({ hash }) => {
+        for (const uta of await manager.resolve()) {
+          const commit = await uta.show(hash)
           if (commit) return { source: uta.id, ...commit }
         }
         return { error: `Commit ${hash} not found in any account` }
@@ -364,9 +394,9 @@ IMPORTANT: Check this BEFORE making new trading decisions.`,
     tradingStatus: tool({
       description: 'View current trading staging area status (like "git status").',
       inputSchema: z.object({ source: z.string().optional().describe(sourceDesc(false)) }),
-      execute: ({ source }) => {
-        const targets = manager.resolve(source)
-        const results = targets.map((uta) => ({ source: uta.id, ...uta.status() }))
+      execute: async ({ source }) => {
+        const targets = await manager.resolve(source)
+        const results = await Promise.all(targets.map(async (uta) => ({ source: uta.id, ...await uta.status() })))
         return results.length === 1 ? results[0] : results
       },
     }),
@@ -381,7 +411,7 @@ IMPORTANT: Check this BEFORE making new trading decisions.`,
         })),
       }),
       execute: async ({ source, priceChanges }) => {
-        const targets = manager.resolve(source)
+        const targets = await manager.resolve(source)
         if (targets.length === 0) return { error: 'No accounts available.' }
         const results: Array<Record<string, unknown>> = []
         for (const uta of targets) results.push({ source: uta.id, ...await uta.simulatePriceChange(priceChanges) })
@@ -429,7 +459,7 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
           limitPrice: z.string().optional().describe('Limit price for stop-limit SL (omit for stop-market)'),
         }).optional().describe('Stop loss order (single-level, full quantity)'),
       }),
-      execute: ({ source, ...params }) => manager.resolveOne(source).stagePlaceOrder(params),
+      execute: async ({ source, ...params }) => (await manager.resolveOne(source)).stagePlaceOrder(params),
     }),
 
     modifyOrder: tool({
@@ -446,7 +476,7 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
         tif: z.enum(['DAY', 'GTC', 'IOC', 'FOK', 'OPG', 'GTD']).optional().describe('New time in force'),
         goodTillDate: z.string().optional().describe('New expiration date'),
       }),
-      execute: ({ source, ...params }) => manager.resolveOne(source).stageModifyOrder(params),
+      execute: async ({ source, ...params }) => (await manager.resolveOne(source)).stageModifyOrder(params),
     }),
 
     closePosition: tool({
@@ -457,7 +487,7 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
         symbol: z.string().optional().describe('Human-readable symbol. Optional.'),
         qty: positiveNumeric.optional().describe('Number of shares to sell. Decimal string. Default: sell all.'),
       }),
-      execute: ({ source, ...params }) => manager.resolveOne(source).stageClosePosition(params),
+      execute: async ({ source, ...params }) => (await manager.resolveOne(source)).stageClosePosition(params),
     }),
 
     cancelOrder: tool({
@@ -466,7 +496,7 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
         source: z.string().describe(sourceDesc(true)),
         orderId: z.string().describe('Order ID to cancel'),
       }),
-      execute: ({ source, orderId }) => manager.resolveOne(source).stageCancelOrder({ orderId }),
+      execute: async ({ source, orderId }) => (await manager.resolveOne(source)).stageCancelOrder({ orderId }),
     }),
 
     tradingCommit: tool({
@@ -475,12 +505,13 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
         source: z.string().optional().describe(sourceDesc(false, 'If omitted, commits all accounts with staged operations.')),
         message: z.string().describe('Commit message explaining your trading decision'),
       }),
-      execute: ({ source, message }) => {
-        const targets = manager.resolve(source)
+      execute: async ({ source, message }) => {
+        const targets = await manager.resolve(source)
         const results: Array<Record<string, unknown>> = []
         for (const uta of targets) {
-          if (uta.status().staged.length === 0) continue
-          results.push({ source: uta.id, ...uta.commit(message) })
+          const status = await uta.status()
+          if (status.staged.length === 0) continue
+          results.push({ source: uta.id, ...await uta.commit(message) })
         }
         if (results.length === 0) return { message: 'No staged operations to commit.' }
         return results.length === 1 ? results[0] : results
@@ -493,23 +524,24 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
         source: z.string().optional().describe(sourceDesc(false, 'If omitted, checks all accounts.')),
       }),
       execute: async ({ source }) => {
-        const targets = manager.resolve(source)
-        const pending = targets.filter(uta => uta.status().pendingMessage)
+        const targets = await manager.resolve(source)
+        const statuses = await Promise.all(targets.map(async (uta) => ({ uta, status: await uta.status() })))
+        const pending = statuses.filter(({ status }) => status.pendingMessage)
         if (pending.length === 0) {
-          const uncommitted = targets.filter(uta => uta.status().staged.length > 0)
+          const uncommitted = statuses.filter(({ status }) => status.staged.length > 0)
           if (uncommitted.length > 0) {
             return {
               error: 'You have staged operations that are NOT committed yet. Call tradingCommit first, then tradingPush.',
-              uncommitted: uncommitted.map(uta => ({ source: uta.id, staged: uta.status().staged })),
+              uncommitted: uncommitted.map(({ uta, status }) => ({ source: uta.id, staged: status.staged })),
             }
           }
           return { message: 'No committed operations to push.' }
         }
         return {
           message: 'Push requires manual approval. The user can approve pending operations from any connected channel (Web UI, Telegram /trading, etc).',
-          pending: pending.map(uta => ({
+          pending: pending.map(({ uta, status }) => ({
             source: uta.id,
-            ...uta.status(),
+            ...status,
           })),
         }
       },
@@ -522,10 +554,11 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
         delayMs: z.number().int().min(0).max(30_000).optional().describe('Wait this many ms before querying exchange. Default: 0. Recommended: 2000-5000 after market orders.'),
       }),
       execute: async ({ source, delayMs }) => {
-        const targets = manager.resolve(source)
+        const targets = await manager.resolve(source)
         const results: Array<Record<string, unknown>> = []
         for (const uta of targets) {
-          if (uta.getPendingOrderIds().length === 0) continue
+          // The UTA-side sync route returns updatedCount=0 when nothing's
+          // pending — no client-side pre-check needed.
           const result = await uta.sync({ delayMs })
           if (result.updatedCount > 0) results.push({ source: uta.id, ...result })
         }

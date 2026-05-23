@@ -15,10 +15,9 @@ import { createEventsRoutes } from './routes/events.js'
 import { createTopologyRoutes } from './routes/topology.js'
 import { createCronRoutes } from './routes/cron.js'
 import { createHeartbeatRoutes } from './routes/heartbeat.js'
-import { createTradingRoutes } from './routes/trading.js'
+import { createTradingProxyRoutes } from './routes/trading-proxy.js'
 import { createTradingConfigRoutes } from './routes/trading-config.js'
 import { createDevRoutes } from './routes/dev.js'
-import { createSimulatorRoutes } from './routes/simulator.js'
 import { createToolsRoutes } from './routes/tools.js'
 import { createAgentStatusRoutes } from './routes/agent-status.js'
 import { createPersonaRoutes } from './routes/persona.js'
@@ -27,6 +26,8 @@ import { createMarketRoutes } from './routes/market.js'
 import { createNotificationsRoutes } from './routes/notifications.js'
 import { createInboxRoutes } from './routes/inbox.js'
 import { createVersionRoutes } from './routes/version.js'
+import { createAuthRoutes } from './routes/auth.js'
+import { createAuthMiddleware } from './middleware/auth.js'
 import { mountOpenTypeBB } from '../server/opentypebb.js'
 import { buildSDKCredentials } from '../domain/market-data/credential-map.js'
 import { createWorkspaceService, type WorkspaceService } from '../workspaces/service.js'
@@ -75,6 +76,44 @@ export class WebPlugin implements Plugin {
   ) {}
 
   async start(ctx: EngineContext) {
+    // ==================== Auth bootstrap ====================
+    // Generate the admin token on first run; subsequent boots no-op.
+    // We do this BEFORE any route mounts so the public-mode safety
+    // check below has a meaningful auth-file state to read.
+    const { bootstrapToken, getTokenInfo } = await import('@/services/auth/index.js')
+    await bootstrapToken({
+      onFirstGeneration: (token) => {
+        console.log('')
+        console.log('═══════════════════════════════════════════════════════════════')
+        console.log('  First-run admin token (save this — won\'t be shown again):')
+        console.log('')
+        console.log(`      ${token}`)
+        console.log('')
+        console.log('  To rotate: delete data/config/auth.json and restart.')
+        console.log('═══════════════════════════════════════════════════════════════')
+        console.log('')
+      },
+    })
+
+    // ==================== Public-mode safety net ====================
+    // Refuse to start if Alice is bound to a non-localhost interface
+    // without an admin token configured. Prevents the "I set
+    // OPENALICE_BIND_HOST=0.0.0.0 for testing and forgot auth" footgun.
+    const bindHost = (process.env['OPENALICE_BIND_HOST'] ?? '127.0.0.1').trim()
+    const bindIsPublic = bindHost !== '127.0.0.1' && bindHost !== '::1' && bindHost !== 'localhost'
+    if (bindIsPublic) {
+      const tokenInfo = await getTokenInfo()
+      if (!tokenInfo.exists && process.env['OPENALICE_DISABLE_AUTH'] !== '1') {
+        throw new Error(
+          `Refusing to start: OPENALICE_BIND_HOST="${bindHost}" exposes Alice ` +
+          `to non-localhost callers, but no admin token has been provisioned. ` +
+          `Start once with OPENALICE_BIND_HOST=127.0.0.1 to generate the token, ` +
+          `then re-set the bind. Set OPENALICE_DISABLE_AUTH=1 only when you ` +
+          `understand the implication (no protection at the Alice boundary).`
+        )
+      }
+    }
+
     // Load sub-channel definitions
     const subChannels = await readWebSubchannels()
 
@@ -109,6 +148,26 @@ export class WebPlugin implements Plugin {
 
     app.use('/api/*', cors())
 
+    // ==================== Auth gate ====================
+    //
+    // The gate sits between CORS and every route mount. Public surface
+    // (/api/auth/*, /api/version, /login, static assets, /mcp) is
+    // allowlisted inside the middleware itself. Localhost requests
+    // bypass when no trusted proxy is configured — preserving the
+    // zero-friction dev UX. See safe/playbooks/{01,02,03}-*.md for the
+    // testable contract.
+    const trustedProxies = (process.env['OPENALICE_TRUSTED_PROXIES'] ?? '')
+      .split(',').map((s) => s.trim()).filter(Boolean)
+    const csrfTrustedOrigins = (process.env['OPENALICE_CSRF_TRUSTED_ORIGINS'] ?? '')
+      .split(',').map((s) => s.trim()).filter(Boolean)
+    const authDisabled = process.env['OPENALICE_DISABLE_AUTH'] === '1'
+    app.route('/api/auth', createAuthRoutes())
+    app.use('*', createAuthMiddleware({
+      trustedProxies,
+      csrfTrustedOrigins,
+      disabled: authDisabled,
+    }))
+
     // ==================== Producers ====================
     // Chat message.received/sent events go through ConnectorCenter's shared
     // `connectors` producer — see `ctx.connectorCenter.emitMessage*`.
@@ -135,9 +194,16 @@ export class WebPlugin implements Plugin {
     app.route('/api/cron', createCronRoutes(ctx))
     app.route('/api/heartbeat', createHeartbeatRoutes(ctx))
     app.route('/api/trading/config', createTradingConfigRoutes(ctx))
-    app.route('/api/trading', createTradingRoutes(ctx))
+    // `/api/trading/*` and `/api/simulator/*` are proxied to the co-located
+    // UTA service (decision #2 of UTA-split v1 — UI stays single-origin).
+    // Trading domain + the MockBroker god-view live on UTA's side.
+    const utaUrl = process.env['OPENALICE_UTA_URL']
+    if (!utaUrl) {
+      throw new Error('OPENALICE_UTA_URL not set — UTA service should be spawned by Guardian before Alice boots')
+    }
+    app.route('/api/trading', createTradingProxyRoutes({ utaBaseUrl: utaUrl }))
+    app.route('/api/simulator', createTradingProxyRoutes({ utaBaseUrl: utaUrl }))
     app.route('/api/dev', createDevRoutes(ctx.connectorCenter))
-    app.route('/api/simulator', createSimulatorRoutes(ctx))
     app.route('/api/tools', createToolsRoutes(ctx.toolCenter))
     app.route('/api/agent-status', createAgentStatusRoutes(ctx))
     app.route('/api/news', createNewsRoutes(ctx))
@@ -188,8 +254,12 @@ export class WebPlugin implements Plugin {
     this.unregisterConnector = ctx.connectorCenter.register(new WebConnector())
 
     // ==================== Start server ====================
-    this.server = serve({ fetch: app.fetch, port: this.config.port }, (info: { port: number }) => {
-      console.log(`web plugin listening on http://localhost:${info.port}`)
+    // Default hostname is 127.0.0.1 — public-internet exposure requires
+    // explicit `OPENALICE_BIND_HOST=0.0.0.0` (gated by the safety check
+    // above + the auth middleware on every route).
+    const hostname = (process.env['OPENALICE_BIND_HOST'] ?? '127.0.0.1').trim()
+    this.server = serve({ fetch: app.fetch, port: this.config.port, hostname }, (info: { port: number }) => {
+      console.log(`web plugin listening on http://${hostname}:${info.port}`)
     })
 
     // Attach WS upgrade handler for /api/workspaces/pty onto the same http.Server.

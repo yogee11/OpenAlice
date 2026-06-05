@@ -84,12 +84,16 @@ export const codexAdapter: CliAdapter = {
     return [...head, 'resume', ctx.resume.sessionId];
   },
 
-  // Headless: `codex exec <prompt>` is non-interactive and exits at the turn
-  // boundary. Same `-c` MCP injection as composeCommand (shared head) so the
-  // agent reaches inbox_push; prompt is the trailing positional after a `--`
-  // end-of-options terminator (so a `-`-leading prompt isn't read as a flag).
+  // Headless: `codex exec` is non-interactive, but its DEFAULT approval policy
+  // CANCELS the agent's actions (MCP tool calls AND shell commands) when there's
+  // no human to approve — so inbox_push fails "user cancelled MCP tool call".
+  // `approval_policy=never` lets it run autonomously. CRITICAL: this `-c` must
+  // be GLOBAL (alongside the mcp_servers `-c` in codexMcpHead, before `exec`) —
+  // an exec-LEVEL `-c` drops the global config and the MCP servers stop loading
+  // (verified: that yields "no MCP tool matching inbox_push"). `--` terminates
+  // options before the trailing prompt.
   composeHeadlessCommand(_base: readonly string[], ctx: SpawnContext, prompt: string): readonly string[] {
-    return [...codexMcpHead(ctx), 'exec', '--json', '--', prompt];
+    return [...codexMcpHead(ctx), '-c', 'approval_policy="never"', 'exec', '--json', '--', prompt];
   },
 
   async writeAiConfig(cwd: string, cred: WorkspaceAiCred): Promise<void> {

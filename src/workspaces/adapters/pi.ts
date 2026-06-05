@@ -77,11 +77,12 @@ export const piAdapter: CliAdapter = {
 
   // Headless: `pi -p <prompt>` is non-interactive and exits at the turn
   // boundary. The MCP bridge + skills auto-load from `<cwd>/.pi` (process cwd =
-  // workspace), so the agent reaches inbox_push without any flag; prompt is the
-  // trailing positional after a `--` end-of-options terminator (so a `-`-leading
-  // prompt isn't read as a flag).
+  // workspace), so the agent reaches inbox_push without any flag. NOTE: pi
+  // REJECTS a `--` end-of-options terminator ("Unknown option: --", verified
+  // 0.78.1), so the prompt is a bare trailing positional — a prompt literally
+  // starting with `-`/`--` is unprotected on pi (rare for task prompts).
   composeHeadlessCommand(_base: readonly string[], _ctx: SpawnContext, prompt: string): readonly string[] {
-    return ['pi', '-p', '--mode', 'json', '--', prompt];
+    return ['pi', '-p', '--mode', 'json', prompt];
   },
 
   composeEnv(ctx: SpawnContext): Record<string, string> {

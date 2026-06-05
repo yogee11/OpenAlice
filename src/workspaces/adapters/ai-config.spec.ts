@@ -284,6 +284,8 @@ describe('composeHeadlessCommand (one-shot headless argv, prompt placed per-CLI)
       'mcp_servers.openalice.url="http://127.0.0.1:47332/mcp"',
       '-c',
       'mcp_servers.openalice-workspace.url="http://127.0.0.1:47332/mcp/ws-1"',
+      '-c',
+      'approval_policy="never"',
       'exec',
       '--json',
       '--',
@@ -302,27 +304,29 @@ describe('composeHeadlessCommand (one-shot headless argv, prompt placed per-CLI)
     ]);
   });
 
-  it('pi: -p --mode json -- <prompt> (bridge auto-loads from cwd)', () => {
+  it('pi: -p --mode json <prompt> (bare trailing positional — pi rejects --)', () => {
     expect(piAdapter.composeHeadlessCommand!(['pi'], ctx(), 'do x')).toEqual([
       'pi',
       '-p',
       '--mode',
       'json',
-      '--',
       'do x',
     ]);
   });
 
-  it('a prompt that starts with - is placed after the -- terminator (not parsed as a flag)', () => {
+  it('claude/codex/opencode place a -leading prompt after a -- terminator', () => {
     const dashy = '--help me by explaining X';
-    for (const a of [claudeAdapter, codexAdapter, opencodeAdapter, piAdapter]) {
+    for (const a of [claudeAdapter, codexAdapter, opencodeAdapter]) {
       const argv = a.composeHeadlessCommand!(['bin'], ctx({ OPENALICE_MCP_URL: 'http://x/mcp', AQ_WS_ID: 'w' }), dashy);
-      const sep = argv.lastIndexOf('--');
-      expect(sep).toBeGreaterThanOrEqual(0);
-      // the dashy prompt is the last token, AFTER the terminator
-      expect(argv[argv.length - 1]).toBe(dashy);
-      expect(sep).toBe(argv.length - 2);
+      expect(argv[argv.length - 1]).toBe(dashy); // prompt is the last token
+      expect(argv[argv.length - 2]).toBe('--'); // immediately after the terminator
     }
+  });
+
+  it('pi takes the prompt as a bare trailing positional (no -- terminator available)', () => {
+    const argv = piAdapter.composeHeadlessCommand!(['pi'], ctx(), 'hello');
+    expect(argv[argv.length - 1]).toBe('hello');
+    expect(argv).not.toContain('--');
   });
 });
 

@@ -68,20 +68,22 @@ alice news read --id <id-from-the-results>
 
 ```bash
 alice economy fred-series --symbol UNRATE --limit 12
-# v1 indicator — by ticker, vendor data auto-selected (UPPERCASE formula):
-alice analysis indicator --asset equity --formula "RSI(CLOSE('AAPL','1d'),14)"
-# v2 quant — by barId, choose a source (broker bars / a specific vendor) or mix
-# sources; pandas-style script (lowercase; bars() + s.close; indicators return
-# the latest value, no [-1]). Get barIds from `alice trading search`.
+# Quant analysis is a two-step loop. (1) Find a K-line source — returns barIds
+# across vendors (yfinance/fmp) AND your connected brokers, each tagged with a
+# freshness badge (realtime/iex/delayed):
+alice analysis search-bars --query AAPL
+# (2) Compute over a chosen barId. pandas-style script: lowercase; bars() + s.close;
+# indicators return the latest value (no [-1]). Broker barIds ("acct|symbol") need
+# no asset=; vendor barIds ("yfinance|…") need asset=equity|crypto|currency|commodity.
 alice analysis quant --script $'s = bars("binance-readonly|BTC/USDT", "1d", count=250)\nrsi(s.close, 14)'
 alice news grep --pattern BTC --meta source=coindesk --meta category=crypto
 ```
 
-> **indicator vs quant:** `indicator` is the quick "what's AAPL's RSI" path
-> (ticker → vendor). `quant` is for source-precise work — chart/compute on the
-> exact broker K-lines you trade, or compare sources (`yfinance|AAPL` vs
-> `ibkr|<conId>`) in one script. Different syntax: `CLOSE('AAPL','1d')` (v1) vs
-> `s.close` over a `bars(...)` binding (v2).
+> **search-bars → quant** is the whole loop, and `search-bars` is the ONLY way to
+> get barIds here (the CLI exposes no trading commands by design). It federates
+> vendor + broker sources — use a broker's barId to compute on the exact K-lines
+> you trade, or mix sources in one script (`yfinance|AAPL` vs `alpaca-paper|AAPL`)
+> to compare.
 
 ## Collaboration — `alice-workspace`
 

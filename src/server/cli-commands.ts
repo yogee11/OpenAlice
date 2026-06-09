@@ -65,6 +65,7 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
         petroleum: 'economyPetroleumStatus',
       },
       analysis: {
+        'search-bars': 'searchBars',
         quant: 'calculateQuant',
       },
       think: {

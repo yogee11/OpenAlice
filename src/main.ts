@@ -27,6 +27,7 @@ import { createQuantTools } from './tool/quant.js'
 import { createBarService } from './domain/market-data/bars/index.js'
 import { createReferenceData } from './domain/market-data/reference/service.js'
 import { createSectorRotationTools } from './tool/sector-rotation.js'
+import { createReferenceBoardTools } from './tool/reference-board.js'
 import { createDerivativesTools } from './tool/derivatives.js'
 import { createIndexTools } from './tool/indices.js'
 import { createEconomyTools } from './tool/economy.js'
@@ -202,6 +203,7 @@ async function main() {
 
   toolCenter.register(createCronTools(cronEngine), 'cron')
   toolCenter.register(createMarketSearchTools(marketSearch), 'market-search')
+  toolCenter.register(createReferenceBoardTools(reference), 'market-board')
   toolCenter.register(createEquityTools(equityClient), 'equity')
   if (etfClient) {
     toolCenter.register(createEtfTools(etfClient), 'etf')

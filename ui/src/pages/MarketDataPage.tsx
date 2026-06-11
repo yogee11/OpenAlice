@@ -117,16 +117,16 @@ export function MarketDataPage() {
 
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-5">
         <div className={`max-w-[880px] mx-auto ${!enabled ? 'opacity-40 pointer-events-none' : ''}`}>
-          {/* Asset Providers — route selection only, no keys */}
-          <AssetProvidersSection
-            providers={providers}
-            onProviderChange={handleProviderChange}
-          />
-
-          {/* Data Hub — hosted boards, zero-key out of the box */}
+          {/* Data Hub — the primary low-frequency source, zero-key OOTB */}
           <HubSection
             hub={hub}
             onChange={(next) => updateConfigImmediate({ hub: next })}
+          />
+
+          {/* Vendor routing — charts + fallback when the hub is off/uncovered */}
+          <AssetProvidersSection
+            providers={providers}
+            onProviderChange={handleProviderChange}
           />
 
           {/* API Keys — unified credential management */}
@@ -160,8 +160,8 @@ function AssetProvidersSection({
 }) {
   return (
     <ConfigSection
-      title="Asset Providers"
-      description="Select a data provider for each asset class. API keys are managed separately below."
+      title="Vendor Routing"
+      description="Per-asset-class vendor for charts (K-lines) and as fallback when the Data Hub is off or doesn't cover an endpoint. Low-frequency data defaults to the hub above."
     >
       <div className="space-y-3">
         {Object.entries(PROVIDER_OPTIONS).map(([asset, options]) => {

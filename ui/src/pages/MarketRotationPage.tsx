@@ -81,7 +81,7 @@ export function MarketRotationPage() {
         description={
           <>
             {t('market.rotationSubtitle')}
-            {data && <span className="text-text-muted/50"> · {t('market.asOf')} {data.asOf}</span>}
+            {data && <span className="text-text-muted/50"> · {t('market.asOf')} {data.asOf}{data.meta?.origin === 'hub' ? ' · hub' : data.meta?.origin === 'local' ? ' · local' : ''}</span>}
           </>
         }
         live={{ lastUpdated: updatedAt }}

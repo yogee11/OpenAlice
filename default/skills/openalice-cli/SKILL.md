@@ -2,16 +2,15 @@
 name: openalice-cli
 description: >
   How to reach OpenAlice from your shell via the `alice*` CLIs. Two binaries:
-  `alice` for MARKET DATA (news, symbol search, equity fundamentals, macro/economy
-  series) and `alice-workspace` for AGENT COLLABORATION (push finished work to the
-  user's inbox, track entities). Both print JSON and are discoverable with
-  `--help`. Use whenever you need a number/headline/fundamental, or want to hand
-  work back to the user, and this workspace exposes the `alice*` commands instead
-  of (or alongside) the OpenAlice MCP tools: "look up AAPL", "what's Apple's
-  revenue", "search news for the Fed", "push my findings to the inbox", "track
-  this ticker". (For technical/quantitative analysis on price — RSI, moving
-  averages, multi-timeframe — see the `openalice-quant` skill.) Discover
-  everything live with `alice --help` / `alice-workspace --help` — do NOT guess flags.
+  `alice` for THIS WORKBENCH's research surfaces (news, cross-asset symbol
+  search, K-line quant analysis, calculator) and `alice-workspace` for AGENT
+  COLLABORATION (push finished work to the user's inbox, track entities). Both
+  print JSON and are discoverable with `--help`. Use for: "search news for the
+  Fed", "find the barId for AAPL", "compute RSI", "push my findings to the
+  inbox", "track this ticker". (LOW-FREQUENCY market data — fundamentals,
+  macro series, calendars, boards — lives on the separate `traderhub` CLI;
+  see the `traderhub` skill. Technical analysis manual: `openalice-quant`.)
+  Discover everything live with `--help` — do NOT guess flags.
 ---
 
 # Using the `alice*` CLIs
@@ -23,8 +22,9 @@ this workspace** (especially if the MCP tools aren't reliably available to you).
 
 | Binary | For | Groups |
 |---|---|---|
-| `alice` | **Market data** (read) | `news`, `market`, `equity`, `economy`, `analysis`, `think` |
+| `alice` | **Workbench research** (read) | `news`, `market`, `analysis`, `think` |
 | `alice-workspace` | **Agent collaboration** | `inbox`, `track` |
+| `traderhub` | **Low-frequency market data** — see the `traderhub` skill | `board`, `equity`, `etf`, `economy`, `global`, `shipping`, `fed`, `crypto`, `index` |
 
 ## Discover, don't guess
 
@@ -47,15 +47,16 @@ alice-workspace <group> <verb> [--flag value]
 - **Output is JSON on stdout.** Pipe it: `alice market search --query AAPL | jq '.results[0]'`.
 - **A non-zero exit means it failed**; the error goes to stderr. Check it.
 
-## Market data — `alice`
+## Workbench research — `alice`
 
-**Find a symbol, then pull fundamentals:**
+**Find a symbol** (returns barIds — the operational handle for charts/quant):
 
 ```bash
 alice market search --query "apple"
-alice equity profile --symbol AAPL
-alice equity financials --symbol AAPL --type income --period annual --limit 5
 ```
+
+(Fundamentals, ratios, calendars and macro series live on `traderhub` —
+e.g. `traderhub equity profile --symbol AAPL`.)
 
 **Scan news, then read one article by its stable id** (the `id` is stable — you
 do **not** need to repeat `--lookback` to read it):
@@ -65,10 +66,9 @@ alice news grep --pattern "interest rate" --lookback 2d
 alice news read --id <id-from-the-results>
 ```
 
-**Macro / metadata filters** (`--meta` is repeatable):
+**Metadata filters** (`--meta` is repeatable):
 
 ```bash
-alice economy fred-series --symbol UNRATE --limit 12
 alice news grep --pattern BTC --meta source=coindesk --meta category=crypto
 ```
 

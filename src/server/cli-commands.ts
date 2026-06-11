@@ -11,6 +11,12 @@
  *                                            COLLABORATION (inbox push + entity
  *                                            tracking); scoped per workspace,
  *                                            launcher-universal (survives a domain swap).
+ *   - `traderhub`       (key `traderhub`) → global ToolCenter — LOW-FREQUENCY
+ *                                            market data via the TraderHub-first
+ *                                            client chain (boards, fundamentals,
+ *                                            macro series, calendars). Named after
+ *                                            the hosted hub so the binary name IS
+ *                                            the domain name.
  *   - `alice-uta`       (key `uta`)       → RESERVED. trading/cron live here once
  *                                            the AI<->human boundary review greenlights
  *                                            irreversible broker mutations. Not exposed yet.
@@ -47,13 +53,39 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
       market: {
         search: 'marketSearchForResearch',
       },
+      analysis: {
+        'search-bars': 'searchBars',
+        quant: 'calculateQuant',
+      },
+      think: {
+        calc: 'calculate',
+      },
+    },
+  },
+  traderhub: {
+    binary: 'traderhub',
+    scope: 'global',
+    description: 'Low-frequency market data — boards, fundamentals, macro, calendars (TraderHub-first)',
+    commands: {
+      board: {
+        get: 'marketGetBoard',
+        rotation: 'sectorRotation',
+      },
       equity: {
         profile: 'equityGetProfile',
         financials: 'equityGetFinancials',
         ratios: 'equityGetRatios',
         earnings: 'equityGetEarningsCalendar',
         insiders: 'equityGetInsiderTrading',
+        'short-interest': 'equityGetShortInterest',
+        estimates: 'equityGetEstimates',
         discover: 'equityDiscover',
+      },
+      etf: {
+        search: 'etfSearch',
+        info: 'etfGetInfo',
+        holdings: 'etfGetHoldings',
+        sectors: 'etfGetSectors',
       },
       economy: {
         'fred-search': 'economyFredSearch',
@@ -63,13 +95,32 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
         'bls-series': 'economyBlsSeries',
         energy: 'economyEnergyOutlook',
         petroleum: 'economyPetroleumStatus',
+        'euro-bop': 'economyEuroAreaBop',
       },
-      analysis: {
-        'search-bars': 'searchBars',
-        quant: 'calculateQuant',
+      global: {
+        cpi: 'economyCountryCpi',
+        rates: 'economyCountryRates',
+        leading: 'economyLeadingIndicator',
+        retail: 'economyCountryRetail',
+        house: 'economyCountryHousePrices',
+        share: 'economyCountrySharePrices',
       },
-      think: {
-        calc: 'calculate',
+      shipping: {
+        'port-search': 'economyPortSearch',
+        'port-volume': 'economyPortVolume',
+        chokepoint: 'economyChokepointVolume',
+      },
+      fed: {
+        documents: 'economyFomcDocuments',
+        'balance-sheet': 'economyFedBalanceSheet',
+        dealers: 'economyDealerPositioning',
+      },
+      crypto: {
+        options: 'cryptoOptionsChains',
+        futures: 'cryptoFuturesInstruments',
+      },
+      index: {
+        search: 'indexSearch',
       },
     },
   },
@@ -95,8 +146,9 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
 }
 
 /**
- * Map a PATH binary name to its export key. `alice` → `data`; `alice-<x>` → `<x>`
- * (e.g. `alice-workspace` → `workspace`). Mirrored in the shim (bin/alice).
+ * Map a PATH binary name to its export key. `alice` → `data`; `alice-<x>` →
+ * `<x>`; any other bare name (e.g. `traderhub`) is its own key. Mirrored in
+ * the shim (bin/alice).
  */
 export function exportKeyForBinary(binary: string): string {
   return binary === 'alice' ? 'data' : binary.replace(/^alice-/, '')

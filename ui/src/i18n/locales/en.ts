@@ -107,6 +107,8 @@ export const en = {
   },
   chat: {
     newChat: 'New chat',
+    newWorkspace: 'New workspace',
+    moreOptions: 'More options',
     today: 'Today',
     yesterday: 'Yesterday',
     collapseSessions: 'Collapse sessions',

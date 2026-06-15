@@ -96,6 +96,8 @@ export const zh: Resources = {
   },
   chat: {
     newChat: '新对话',
+    newWorkspace: '新建工作区',
+    moreOptions: '更多选项',
     today: '今天',
     yesterday: '昨天',
     collapseSessions: '收起会话',

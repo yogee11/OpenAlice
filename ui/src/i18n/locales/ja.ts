@@ -96,6 +96,8 @@ export const ja: Resources = {
   },
   chat: {
     newChat: '新しいチャット',
+    newWorkspace: '新しいワークスペース',
+    moreOptions: 'その他のオプション',
     today: '今日',
     yesterday: '昨日',
     collapseSessions: 'セッションを折りたたむ',

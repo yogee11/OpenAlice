@@ -104,6 +104,8 @@ export const zhHant: Resources = {
   },
   chat: {
     newChat: '新對話',
+    newWorkspace: '新增工作區',
+    moreOptions: '更多選項',
     today: '今天',
     yesterday: '昨天',
     collapseSessions: '收合工作階段',

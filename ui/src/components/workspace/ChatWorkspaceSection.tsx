@@ -12,15 +12,16 @@
  * this surface is for chatting, not workspace management.
  */
 
-import { useMemo, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronRight, Plus, Settings as SettingsIcon, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, FolderPlus, Plus, Settings as SettingsIcon, X } from 'lucide-react'
 
 import { useWorkspaces } from '../../contexts/WorkspacesContext'
 import { useWorkspace } from '../../tabs/store'
 import { getFocusedTab } from '../../tabs/types'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { deleteWorkspace, type SessionRecord, type Workspace } from './api'
+import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
 import { SessionRow } from './Sidebar'
 
 const CHAT_TEMPLATE = 'chat'
@@ -59,6 +60,19 @@ export function ChatWorkspaceSection(): ReactElement | null {
 
   const chatTemplate = ctx.templates.find((tpl) => tpl.name === CHAT_TEMPLATE)
   const [pendingDelete, setPendingDelete] = useState<Workspace | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Close the "more" menu on an outside click.
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [menuOpen])
 
   const handleConfirmDelete = async (): Promise<void> => {
     if (!pendingDelete) return
@@ -77,17 +91,69 @@ export function ChatWorkspaceSection(): ReactElement | null {
 
   return (
     <>
-      {/* Primary action — start a new conversation (the Ask Alice composer). */}
+      {/* Primary action: New chat (the Ask Alice composer). The split caret
+          keeps the power-user "New workspace" (named, custom tag) reachable. */}
       <div className="px-2 pt-2 pb-1.5">
-        <button
-          type="button"
-          onClick={() => openOrFocus({ kind: 'chat-landing', params: {} })}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-bg-tertiary/30 text-[13px] font-medium text-text-muted transition-colors hover:text-text hover:border-accent/50 hover:bg-bg-tertiary/60"
-        >
-          <Plus size={15} strokeWidth={2.25} />
-          <span>{t('chat.newChat')}</span>
-        </button>
+        <div className="flex items-stretch gap-1">
+          <button
+            type="button"
+            onClick={() => openOrFocus({ kind: 'chat-landing', params: {} })}
+            className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-bg-tertiary/30 text-[13px] font-medium text-text-muted transition-colors hover:text-text hover:border-accent/50 hover:bg-bg-tertiary/60"
+          >
+            <Plus size={15} strokeWidth={2.25} className="shrink-0" />
+            <span className="truncate">{t('chat.newChat')}</span>
+          </button>
+          <div ref={menuRef} className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((o) => !o)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label={t('chat.moreOptions')}
+              title={t('chat.moreOptions')}
+              className={`h-full px-2 flex items-center justify-center rounded-lg border transition-colors ${
+                menuOpen
+                  ? 'border-accent/50 bg-bg-tertiary/60 text-text'
+                  : 'border-border/60 bg-bg-tertiary/30 text-text-muted hover:text-text hover:border-accent/50 hover:bg-bg-tertiary/60'
+              }`}
+            >
+              <ChevronDown size={14} strokeWidth={2.25} />
+            </button>
+            {menuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full mt-1 min-w-[170px] py-1 bg-bg-secondary border border-border/70 rounded-lg shadow-lg z-10"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setShowCreate(true)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left text-text transition-colors hover:bg-bg-tertiary"
+                >
+                  <FolderPlus size={14} strokeWidth={2} className="shrink-0 text-text-muted" />
+                  <span>{t('chat.newWorkspace')}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+
+      {showCreate && (
+        <CreateWorkspaceDialog
+          templates={ctx.templates}
+          agents={ctx.agents}
+          presetTemplate={CHAT_TEMPLATE}
+          onCreated={(workspace) => {
+            ctx.refresh()
+            openOrFocus({ kind: 'workspace', params: { wsId: workspace.id } })
+          }}
+          onClose={() => setShowCreate(false)}
+        />
+      )}
 
       <ul className="py-0.5">
         {chatWorkspaces.length === 0 && !ctx.listError && (

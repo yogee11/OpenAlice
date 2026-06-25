@@ -8,10 +8,12 @@ import {
   Code2,
   Cpu,
   KeyRound,
+  LayoutGrid,
   Loader2,
   MessageSquare,
   Paperclip,
   Sparkles,
+  X,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -266,9 +268,21 @@ export function ChatLandingPage({ spec }: { spec: { params: { targetWsId?: strin
               <h1 className="text-xl md:text-2xl font-semibold text-text">
                 {t('chatLanding.targetHeading')}
               </h1>
-              <p className="text-sm text-text-muted">
-                {t('chatLanding.targetSub', { tag: targetWs.tag })}
-              </p>
+              <div className="flex items-center justify-center gap-2 pt-1">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 pl-2.5 pr-1.5 py-1 text-[12.5px] font-medium text-accent">
+                  <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+                  {targetWs.tag}
+                  <button
+                    type="button"
+                    onClick={() => openOrFocus({ kind: 'chat-landing', params: {} })}
+                    aria-label={t('chatLanding.clearTarget')}
+                    title={t('chatLanding.clearTarget')}
+                    className="ml-0.5 rounded-full p-0.5 text-accent/70 hover:text-accent hover:bg-accent/20 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              </div>
             </>
           ) : (
             <>
@@ -278,7 +292,13 @@ export function ChatLandingPage({ spec }: { spec: { params: { targetWsId?: strin
           )}
         </div>
 
-        <div className="bg-bg-secondary/60 border border-border/60 rounded-2xl px-3 pt-3 pb-2 transition-colors focus-within:border-accent/50">
+        <div
+          className={`rounded-2xl px-3 pt-3 pb-2 transition-colors ${
+            targetWs
+              ? 'bg-accent/[0.04] border border-accent/45 ring-1 ring-accent/15 focus-within:border-accent/70'
+              : 'bg-bg-secondary/60 border border-border/60 focus-within:border-accent/50'
+          }`}
+        >
           <textarea
             ref={textareaRef}
             value={value}

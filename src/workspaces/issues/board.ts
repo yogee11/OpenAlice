@@ -99,6 +99,70 @@ export function annotateNameCollisions(workspaces: IssuesSnapshotWorkspace[]): s
   return duplicateNames
 }
 
+// ==================== Flattened board rows (CLI / agent surface) ====================
+// The `alice-workspace issue list` (issue_list) agent surface wants the board as
+// ONE flat list of title rows tagged with their owning workspace — not the
+// per-workspace tree GET /api/issues returns. Each row keeps the snapshot's
+// display fields, replaces `when` with a plain `scheduled` boolean, and carries
+// the workspace handle so the agent can scan titles globally then drill into one
+// with issue_show. Pure projection — easy to unit-test without a service.
+
+/** One flattened global-board row: an issue's display fields + the owning
+ *  workspace handle (wsId precise, tag human). `scheduled` collapses the
+ *  snapshot's `when`; `nameCollision` rides through iff the title clashes
+ *  across workspaces. */
+export interface BoardRow {
+  id: string
+  title: string
+  status: IssueStatus
+  priority: IssuePriority
+  assignee: string
+  /** True iff the issue self-schedules (snapshot `when` present). */
+  scheduled: boolean
+  workspace: { wsId: string; tag: string }
+  /** Present (true) iff this title clashes across workspaces — carried from
+   *  the snapshot's `annotateNameCollisions`. Absent ⇒ unique. */
+  nameCollision?: boolean
+}
+
+/** A workspace whose `.alice/issues/` dir was unreadable — surfaced rather than
+ *  silently dropped, so a broken peer is visible on the agent's board. */
+export interface BoardInvalidWorkspace {
+  wsId: string
+  tag: string
+  error?: string
+}
+
+/** Flatten an {@link IssuesSnapshot} into the global board the issue_list tool
+ *  returns: every workspace's issues as one tagged row list, plus the workspaces
+ *  whose issues dir failed to read. Pure — no I/O, no service. */
+export function flattenBoardRows(snapshot: IssuesSnapshot): {
+  rows: BoardRow[]
+  invalid: BoardInvalidWorkspace[]
+} {
+  const rows: BoardRow[] = []
+  const invalid: BoardInvalidWorkspace[] = []
+  for (const ws of snapshot.workspaces) {
+    if (ws.status === 'invalid') {
+      invalid.push({ wsId: ws.wsId, tag: ws.tag, ...(ws.error ? { error: ws.error } : {}) })
+      continue
+    }
+    for (const issue of ws.issues) {
+      rows.push({
+        id: issue.id,
+        title: issue.title,
+        status: issue.status,
+        priority: issue.priority,
+        assignee: issue.assignee,
+        scheduled: issue.when !== undefined,
+        workspace: { wsId: ws.wsId, tag: ws.tag },
+        ...(issue.nameCollision ? { nameCollision: true } : {}),
+      })
+    }
+  }
+  return { rows, invalid }
+}
+
 /** One issue reference returned by the `[[name]]` resolver — enough to render a
  *  disambiguation candidate and navigate to its wsId-precise detail route
  *  (`/issues/:wsId/:id`). `wsTag` is the human label; `wsId` is the precise key. */

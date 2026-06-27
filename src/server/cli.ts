@@ -71,6 +71,11 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
     origin?: InboxOrigin,
   ): { resolve: (name: string) => Tool | null; inventoryNames: () => string[] } => {
     if (exp.scope === 'scoped') {
+      // GLOBAL issue-board reader, backed by the live WorkspaceService.
+      // Built here so issue_list / issue_show on `alice-workspace` read EVERY
+      // workspace's issues (reads global), while create/update/comment stay
+      // caller-local. Absent when the service isn't up yet → tools self-read.
+      const svc = getWorkspaceService()
       const wsTools = workspaceToolCenter.build({
         workspaceId: ws.id,
         workspaceLabel: ws.tag,
@@ -80,6 +85,15 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
         // the in-workspace cross-workspace addressing path. Shared with the
         // mcp.ts build site so the two never drift.
         resolveWorkspace: makeWorkspaceResolver(getWorkspaceService),
+        ...(svc
+          ? {
+              board: {
+                snapshot: () => svc.issuesSnapshot(),
+                detail: (w: string, i: string) => svc.issueDetail(w, i),
+                resolveByName: (n: string) => svc.resolveIssuesByName(n),
+              },
+            }
+          : {}),
         // Agent-invisible run provenance from the `x-openalice-run` header
         // (resolved server-side). Only the invoke path passes it; manifest omits
         // it (no execution, no push). Absent → undefined.

@@ -41,6 +41,7 @@ import {
   createIssue,
   updateIssueFields,
 } from '../workspaces/issues/mutate.js'
+import { flattenBoardRows } from '../workspaces/issues/board.js'
 
 /** Resolve THIS workspace's absolute checkout dir, or a clean error. */
 function selfDir(ctx: WorkspaceToolContext): { ok: true; dir: string } | { ok: false; error: string } {
@@ -201,14 +202,25 @@ export const issueListFactory: WorkspaceToolFactory = {
   build(ctx: WorkspaceToolContext) {
     return tool({
       description: [
-        "List THIS workspace's issues — every `.alice/issues/<id>.md`, validated.",
+        "List the whole issue board — every workspace's issues as title rows",
+        '(scan titles first; use issue_show to read one in full).',
         '',
-        'Returns a compact row per issue (id, title, status, priority, assignee,',
-        'and whether it self-schedules). Any file that fails to parse is reported',
-        'in `invalid` rather than dropped silently.',
+        'Each row carries id, title, status, priority, assignee, whether it',
+        "self-schedules, and the owning `workspace` ({ wsId, tag }). A row whose",
+        'title clashes across workspaces is flagged `nameCollision`. Workspaces',
+        'whose issues dir is unreadable are surfaced in `invalid`, not dropped.',
       ].join('\n'),
       inputSchema: z.object({}),
       execute: async () => {
+        // GLOBAL board when the service-backed reader is wired (the
+        // `alice-workspace` surface). Reads EVERY workspace's issues.
+        if (ctx.board) {
+          const snapshot = await ctx.board.snapshot()
+          const { rows, invalid } = flattenBoardRows(snapshot)
+          return { ok: true as const, issues: rows, invalid }
+        }
+        // FALLBACK (no service: older contexts / unit tests): this workspace's
+        // own files only, preserving the original self-scoped behavior.
         const dir = selfDir(ctx)
         if (!dir.ok) return { ok: false as const, error: dir.error }
         const res = await readWorkspaceIssues(dir.dir)
@@ -229,24 +241,56 @@ export const issueShowFactory: WorkspaceToolFactory = {
   build(ctx: WorkspaceToolContext) {
     return tool({
       description: [
-        "Show one of THIS workspace's issues in full — frontmatter + markdown body",
-        '(which includes any `## Comments` section). Use this to read the current',
-        'state of an issue before updating or commenting on it.',
+        'Show one issue from the global board in full — resolved by its NAME',
+        '(case-insensitive id OR title), across every workspace.',
+        '',
+        'Returns the full detail: frontmatter + markdown body (incl. any',
+        '`## Comments`), the run history, and the inbox reports the issue produced.',
+        'If the name matches issues in MORE THAN ONE workspace, returns',
+        '`ambiguous` (candidate { wsId, wsTag, id, title } list) — pick one by',
+        'workspace and call again. Use this before updating or commenting.',
       ].join('\n'),
       inputSchema: z.object({
-        id: z.string().min(1).describe('The issue id to show.'),
+        id: z.string().min(1).describe("The issue's name to show — its id OR title (case-insensitive)."),
       }),
       execute: async ({ id }) => {
-        const dir = selfDir(ctx)
-        if (!dir.ok) return { ok: false as const, error: dir.error }
-        const raw = await readWorkspaceFile(dir.dir, join(ISSUES_DIR_REL, `${id}.md`))
-        if (raw === null) return { ok: false as const, error: `no such issue: ${id}` }
-        const parsed = parseIssueContent(id, raw)
-        if (!parsed.ok) return { ok: false as const, error: parsed.error }
-        return { ok: true as const, issue: parsed.issue }
+        // GLOBAL by-name resolution when the service-backed reader is wired.
+        // Handle-addressed: the agent never supplies a wsId UUID up front; a
+        // collision returns candidates so it can disambiguate by workspace.
+        if (ctx.board) {
+          const refs = await ctx.board.resolveByName(id)
+          if (refs.length === 1) {
+            const detail = await ctx.board.detail(refs[0].wsId, refs[0].id)
+            if (detail) return { ok: true as const, ...detail }
+            // detail vanished between resolve and read → fall through to self.
+          } else if (refs.length > 1) {
+            return {
+              ok: true as const,
+              ambiguous: refs.map((r) => ({ wsId: r.wsId, wsTag: r.wsTag, id: r.id, title: r.title })),
+            }
+          }
+          // 0 matches → fall through to the self-file read so a local id still
+          // resolves; if that misses too, it returns the not_found error.
+        }
+        return readSelfIssue(ctx, id)
       },
     })
   },
+}
+
+/** Read one issue from THIS workspace's own files — the issue_show fallback
+ *  when the global board reader is absent or finds no match. */
+async function readSelfIssue(
+  ctx: WorkspaceToolContext,
+  id: string,
+): Promise<{ ok: true; issue: IssueRecord } | { ok: false; error: string }> {
+  const dir = selfDir(ctx)
+  if (!dir.ok) return { ok: false, error: dir.error }
+  const raw = await readWorkspaceFile(dir.dir, join(ISSUES_DIR_REL, `${id}.md`))
+  if (raw === null) return { ok: false, error: `no such issue: ${id}` }
+  const parsed = parseIssueContent(id, raw)
+  if (!parsed.ok) return { ok: false, error: parsed.error }
+  return { ok: true, issue: parsed.issue }
 }
 
 /** All issue tool factories, in registration order. */

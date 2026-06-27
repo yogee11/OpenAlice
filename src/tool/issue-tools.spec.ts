@@ -7,6 +7,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { WorkspaceToolContext } from '../core/workspace-tool-center.js'
 import { readWorkspaceIssues } from '../workspaces/issues/declaration.js'
+import type {
+  IssueDetail,
+  IssuesSnapshot,
+  WikilinkIssueRef,
+} from '../workspaces/issues/board.js'
 import {
   issueCommentFactory,
   issueCreateFactory,
@@ -137,6 +142,140 @@ describe('issue_list / issue_show', () => {
     const res = await run(issueShowFactory.build(ctx()), { id: 'missing' })
     expect(res.ok).toBe(false)
     expect(res.error).toMatch(/no such issue/)
+  })
+})
+
+describe('global board (ctx.board present)', () => {
+  // A two-workspace snapshot: one valid pair + a colliding name ("Shared") in
+  // both, plus a workspace whose issues dir failed to read.
+  const snapshot: IssuesSnapshot = {
+    workspaces: [
+      {
+        wsId: 'ws-a',
+        tag: 'auto-quant',
+        status: 'ok',
+        issues: [
+          { id: 'alpha', title: 'Alpha', status: 'todo', priority: 'high', assignee: 'human' },
+          {
+            id: 'shared-a',
+            title: 'Shared',
+            status: 'in_progress',
+            priority: 'none',
+            assignee: 'ws:auto-quant',
+            when: { kind: 'every', every: '30m' },
+            nameCollision: true,
+          },
+        ],
+      },
+      {
+        wsId: 'ws-b',
+        tag: 'research',
+        status: 'ok',
+        issues: [
+          {
+            id: 'shared-b',
+            title: 'Shared',
+            status: 'todo',
+            priority: 'low',
+            assignee: 'unassigned',
+            nameCollision: true,
+          },
+        ],
+      },
+      { wsId: 'ws-c', tag: 'broken', status: 'invalid', error: 'retired .alice/issue.json', issues: [] },
+    ],
+    duplicateNames: ['Shared'],
+  }
+
+  const detailFor: Record<string, IssueDetail> = {
+    'ws-a/alpha': {
+      issue: {
+        id: 'alpha',
+        title: 'Alpha',
+        body: 'the alpha body',
+        status: 'todo',
+        priority: 'high',
+        assignee: 'human',
+      },
+      runs: [],
+      inboxReports: [],
+    },
+  }
+
+  function boardCtx(over: Partial<WorkspaceToolContext['board']> = {}) {
+    const board: NonNullable<WorkspaceToolContext['board']> = {
+      snapshot: async () => snapshot,
+      detail: async (wsId, id) => detailFor[`${wsId}/${id}`] ?? null,
+      resolveByName: async (name) => {
+        const token = name.trim().toLowerCase()
+        const refs: WikilinkIssueRef[] = []
+        for (const ws of snapshot.workspaces) {
+          for (const issue of ws.issues) {
+            if (issue.id.toLowerCase() === token || issue.title.trim().toLowerCase() === token) {
+              refs.push({ wsId: ws.wsId, wsTag: ws.tag, id: issue.id, title: issue.title })
+            }
+          }
+        }
+        return refs
+      },
+      ...over,
+    }
+    return ctx({ board })
+  }
+
+  it('issue_list flattens rows across every workspace, tags collisions, surfaces invalid', async () => {
+    const list = await run(issueListFactory.build(boardCtx()), {})
+    expect(list.ok).toBe(true)
+    const rows = list.issues as Array<{
+      id: string
+      workspace: { wsId: string; tag: string }
+      scheduled: boolean
+      nameCollision?: boolean
+    }>
+    expect(rows.map((r) => r.id).sort()).toEqual(['alpha', 'shared-a', 'shared-b'])
+    // workspace handle rides each row
+    expect(rows.find((r) => r.id === 'alpha')?.workspace).toEqual({ wsId: 'ws-a', tag: 'auto-quant' })
+    // scheduled collapses `when`
+    expect(rows.find((r) => r.id === 'shared-a')?.scheduled).toBe(true)
+    expect(rows.find((r) => r.id === 'alpha')?.scheduled).toBe(false)
+    // cross-workspace name clash flagged
+    expect(rows.find((r) => r.id === 'shared-a')?.nameCollision).toBe(true)
+    expect(rows.find((r) => r.id === 'shared-b')?.nameCollision).toBe(true)
+    // unreadable workspace surfaced, not dropped
+    expect(list.invalid).toEqual([{ wsId: 'ws-c', tag: 'broken', error: 'retired .alice/issue.json' }])
+  })
+
+  it('issue_show returns full detail for a unique name', async () => {
+    const show = await run(issueShowFactory.build(boardCtx()), { id: 'Alpha' })
+    expect(show.ok).toBe(true)
+    expect(show.issue).toMatchObject({ id: 'alpha', body: 'the alpha body' })
+    expect(show.runs).toEqual([])
+    expect(show.inboxReports).toEqual([])
+    expect(show.ambiguous).toBeUndefined()
+  })
+
+  it('issue_show returns an ambiguous candidate list for a colliding name', async () => {
+    const show = await run(issueShowFactory.build(boardCtx()), { id: 'shared' })
+    expect(show.ok).toBe(true)
+    expect(show.issue).toBeUndefined()
+    expect(show.ambiguous).toEqual([
+      { wsId: 'ws-a', wsTag: 'auto-quant', id: 'shared-a', title: 'Shared' },
+      { wsId: 'ws-b', wsTag: 'research', id: 'shared-b', title: 'Shared' },
+    ])
+  })
+
+  it('issue_show falls back to a self-file read when the global board has no match', async () => {
+    // Write a local-only issue; the global resolver returns 0 → self read finds it.
+    await run(issueCreateFactory.build(ctx()), { id: 'local-only', title: 'Local Only' })
+    const show = await run(issueShowFactory.build(boardCtx()), { id: 'local-only' })
+    expect(show.ok).toBe(true)
+    expect(show.issue).toMatchObject({ id: 'local-only', title: 'Local Only' })
+  })
+
+  it('issue_show errors not_found when neither the board nor the self files match', async () => {
+    const show = await run(issueShowFactory.build(boardCtx()), { id: 'ghost' })
+    expect(show.ok).toBe(false)
+    expect(show.error).toMatch(/no such issue/)
   })
 })
 

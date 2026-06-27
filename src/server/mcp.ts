@@ -89,6 +89,10 @@ export class McpPlugin implements Plugin {
      *  Each WorkspaceToolFactory is invoked with the URL's wsId so its
      *  tools' execute() closes over that identity. */
     const createWorkspaceMcpServer = (wsId: string, wsLabel: string, origin?: InboxOrigin) => {
+      // GLOBAL issue-board reader, backed by the live WorkspaceService — parity
+      // with the CLI gateway so issue_list / issue_show read EVERY workspace's
+      // issues here too. Absent when the service isn't up → tools self-read.
+      const svc = getWorkspaceService()
       const tools = workspaceToolCenter.build({
         workspaceId: wsId,
         workspaceLabel: wsLabel,
@@ -97,6 +101,15 @@ export class McpPlugin implements Plugin {
         // Parity with the CLI gateway so external MCP consumers get the same
         // workspace_path resolution — shared helper, so the two can't drift.
         resolveWorkspace: makeWorkspaceResolver(getWorkspaceService),
+        ...(svc
+          ? {
+              board: {
+                snapshot: () => svc.issuesSnapshot(),
+                detail: (w: string, i: string) => svc.issueDetail(w, i),
+                resolveByName: (n: string) => svc.resolveIssuesByName(n),
+              },
+            }
+          : {}),
         // Agent-invisible run provenance from the out-of-band header (resolved
         // server-side from the authoritative registry). Absent → undefined.
         ...(origin ? { origin } : {}),

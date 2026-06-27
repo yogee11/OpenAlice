@@ -164,8 +164,11 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
         add: 'entity_upsert',
         search: 'entity_search',
       },
-      // issue: THIS workspace's own board (`.alice/issues/<id>.md`) — the
-      // agent-primary surface for the same writes the human/UI HTTP routes do.
+      // issue: the issue board. READS are GLOBAL — `list` scans every
+      // workspace's titles, `show <name>` resolves a name across the board and
+      // returns full detail (issue + runs + inbox reports). WRITES stay local —
+      // create/update/comment author in the CALLER's own `.alice/issues/`
+      // (editing a peer's board is the human-approved peer-edit path).
       issue: {
         update: 'issue_update',
         comment: 'issue_comment',

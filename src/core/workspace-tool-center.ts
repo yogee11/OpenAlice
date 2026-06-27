@@ -27,6 +27,10 @@
 import type { Tool } from 'ai'
 import type { IInboxStore, InboxOrigin } from './inbox-store.js'
 import type { IEntityStore } from './entity-store.js'
+// TYPE-ONLY: the global-issue-board shapes. Importing them as types keeps
+// core/ free of any runtime dependency on the workspaces/ module (no
+// core→workspaces coupling), while letting the board reader below be typed.
+import type { IssuesSnapshot, IssueDetail, WikilinkIssueRef } from '../workspaces/issues/board.js'
 
 // ==================== Context handed to factories ====================
 
@@ -58,6 +62,18 @@ export interface WorkspaceToolContext {
    *  inboxStore.append) so a pushed entry self-links to its originating run /
    *  issue. Absent (interactive session, or no header) → undefined. */
   origin?: InboxOrigin
+  /** GLOBAL issue-board reader — the cross-workspace board the
+   *  `alice-workspace` CLI surfaces (issue_list / issue_show read EVERY
+   *  workspace's issues, not just the caller's). Backed by the live
+   *  WorkspaceService at the two build sites (cli.ts, mcp.ts). OPTIONAL: a
+   *  context without a service (older callers, unit tests) omits it, and the
+   *  issue tools then fall back to reading THIS workspace's own files — so
+   *  nothing breaks when it's absent. Reads only; writes stay caller-local. */
+  board?: {
+    snapshot(): Promise<IssuesSnapshot>
+    detail(wsId: string, id: string): Promise<IssueDetail | null>
+    resolveByName(name: string): Promise<WikilinkIssueRef[]>
+  }
 }
 
 // ==================== Factory shape ====================

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import type { InboxEntry } from '../../core/inbox-store.js'
-import { annotateNameCollisions, inboxReportsForIssue, type IssuesSnapshotWorkspace } from './board.js'
+import {
+  annotateNameCollisions,
+  flattenBoardRows,
+  inboxReportsForIssue,
+  type IssuesSnapshot,
+  type IssuesSnapshotWorkspace,
+} from './board.js'
 
 function ws(wsId: string, titles: string[]): IssuesSnapshotWorkspace {
   return {
@@ -41,6 +47,57 @@ describe('annotateNameCollisions', () => {
   it('returns an empty list when every name is globally unique', () => {
     const workspaces = [ws('a', ['One']), ws('b', ['Two'])]
     expect(annotateNameCollisions(workspaces)).toEqual([])
+  })
+})
+
+describe('flattenBoardRows', () => {
+  it('flattens issues across workspaces, collapses `when` to `scheduled`, tags the owning workspace, and surfaces invalid workspaces', () => {
+    const snapshot: IssuesSnapshot = {
+      workspaces: [
+        {
+          wsId: 'a',
+          tag: 'auto-quant',
+          status: 'ok',
+          issues: [
+            { id: 'x', title: 'X', status: 'todo', priority: 'high', assignee: 'human' },
+            {
+              id: 'y',
+              title: 'Y',
+              status: 'todo',
+              priority: 'none',
+              assignee: 'unassigned',
+              when: { kind: 'every', every: '1h' },
+              nameCollision: true,
+            },
+          ],
+        },
+        { wsId: 'b', tag: 'broken', status: 'invalid', error: 'unreadable', issues: [] },
+      ],
+      duplicateNames: [],
+    }
+    const { rows, invalid } = flattenBoardRows(snapshot)
+    expect(rows).toEqual([
+      {
+        id: 'x',
+        title: 'X',
+        status: 'todo',
+        priority: 'high',
+        assignee: 'human',
+        scheduled: false,
+        workspace: { wsId: 'a', tag: 'auto-quant' },
+      },
+      {
+        id: 'y',
+        title: 'Y',
+        status: 'todo',
+        priority: 'none',
+        assignee: 'unassigned',
+        scheduled: true,
+        workspace: { wsId: 'a', tag: 'auto-quant' },
+        nameCollision: true,
+      },
+    ])
+    expect(invalid).toEqual([{ wsId: 'b', tag: 'broken', error: 'unreadable' }])
   })
 })
 

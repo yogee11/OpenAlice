@@ -13,6 +13,14 @@ import type { IssueDetail, IssuePriority, IssueSnapshot, IssueStatus } from '../
 // (urgent/high/medium/low/none); all three assignee shapes (human / ws:<tag> /
 // unassigned); all three `when` kinds (cron/every/at) plus unscheduled work
 // items (no `when`, no lastFired/nextDue).
+//
+// Also exercised: a CROSS-WORKSPACE NAME COLLISION. Both workspaces declare an
+// issue titled "Liquidity risk review" (same title, distinct wsId) — so each row
+// carries `nameCollision: true` and the snapshot's `duplicateNames` lists the
+// clashing title. This drives the board's duplicate-name warning, and the
+// `[[Liquidity risk review]]` token in an issue body resolves to BOTH issues via
+// /api/wikilink/resolve (the disambiguation-picker case). Names are global team
+// objects in the `[[]]` graph; collisions are surfaced, never linted away.
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
@@ -63,6 +71,17 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           priority: 'low',
           assignee: 'unassigned',
         },
+        // Cross-workspace name collision (also declared in demo-ws-macro under
+        // the same title). nameCollision flags the board warning; the two share a
+        // title but NOT a wsId, so access stays wsId-precise.
+        {
+          id: 'liquidity-risk-review',
+          title: 'Liquidity risk review',
+          status: 'todo',
+          priority: 'high',
+          assignee: 'ws:auto-quant',
+          nameCollision: true,
+        },
       ],
     },
     {
@@ -108,9 +127,22 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           priority: 'low',
           assignee: 'unassigned',
         },
+        // Cross-workspace name collision (the other half of the auto-quant
+        // "Liquidity risk review"). Same title, different wsId / status / owner.
+        {
+          id: 'liquidity-risk-review',
+          title: 'Liquidity risk review',
+          status: 'backlog',
+          priority: 'medium',
+          assignee: 'human',
+          nameCollision: true,
+        },
       ],
     },
   ],
+  // The titles claimed by more than one workspace (first-seen casing). Drives the
+  // board's "also in N workspaces" warning; mirrors the server's annotateNameCollisions.
+  duplicateNames: ['Liquidity risk review'],
 }
 
 // ==================== Detail (Phase 2a) ====================
@@ -154,6 +186,18 @@ const demoIssueExtras: Record<string, IssueDetailExtras> = {
       '## Output',
       '',
       'Push a short ranked list to the Inbox — ticker, gap %, the one-line why, and whether it touches the book.',
+      '',
+      '## Related',
+      '',
+      // Wikilinks across BOTH namespaces — exercises the issue-detail resolver:
+      //  • [[stock-vst]] / [[ai-data-center-power]] → tracked ENTITIES (unique).
+      //  • [[Thesis invalidation watch]] → a sibling ISSUE by title (unique).
+      //  • [[Liquidity risk review]] → COLLISION: matches an issue in two
+      //    workspaces, so the resolver returns >1 candidate and the UI shows a
+      //    workspace picker.
+      '- Movers cluster under the [[ai-data-center-power]] theme; the primary expression is [[stock-vst]].',
+      '- Coordinated with [[Thesis invalidation watch]].',
+      '- Sizing for any new names feeds the [[Liquidity risk review]] (heads-up: that title is used in two workspaces — pick the right one).',
     ].join('\n'),
     what: 'Run the morning movers scan and push a ranked Inbox digest.',
     agent: 'codex',
@@ -307,12 +351,38 @@ const demoIssueExtras: Record<string, IssueDetailExtras> = {
     body: 'Old signal-cache entries are never evicted. Add a TTL sweep so the cache stops growing unbounded.',
     runs: [],
   },
+  // Auto-quant half of the cross-workspace name collision. References an entity
+  // and a sibling issue, and points at its macro-side namesake — clicking
+  // [[Liquidity risk review]] surfaces both (the picker).
+  'demo-ws-auto-quant/liquidity-risk-review': {
+    body: [
+      'Check we can actually exit the book under stress — venue depth, spread, and how fast we could flatten.',
+      '',
+      'The crowded [[ai-data-center-power]] names move together, so position-level liquidity understates the real risk. Cross-check against the [[Morning movers scan]] gap list.',
+      '',
+      '> Note: macro-research tracks a same-named [[Liquidity risk review]] from the system-wide angle — these are two different issues that happen to share a title.',
+    ].join('\n'),
+    runs: [],
+  },
   'demo-ws-macro/fed-speaker-calendar': {
     body: 'Done — the upcoming Fed speaker calendar is summarized in `notes/fed-speakers.md` with hawk/dove leanings.',
     runs: [],
   },
   'demo-ws-macro/cross-asset-correlation': {
     body: 'Canceled — superseded by the dealer-positioning work; the correlation study was duplicating that lens.',
+    runs: [],
+  },
+  // Macro half of the cross-workspace name collision — same title as the
+  // auto-quant issue above, framed from the system-wide angle.
+  'demo-ws-macro/liquidity-risk-review': {
+    body: [
+      'Where would funding/market liquidity bite first if conditions tighten? Map the channels, not any one book.',
+      '',
+      '- Repo / front-end stress vs the current [[ai-data-center-power]] funding of capex-heavy names',
+      '- Dealer balance-sheet capacity into quarter-end',
+      '',
+      'See also the desk-level [[Liquidity risk review]] in auto-quant — narrower scope, same name.',
+    ].join('\n'),
     runs: [],
   },
 }

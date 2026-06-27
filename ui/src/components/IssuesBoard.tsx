@@ -7,6 +7,7 @@ import {
   CircleDashed,
   CircleDot,
   Clock,
+  Copy,
   ListChecks,
   XCircle,
 } from 'lucide-react'
@@ -116,11 +117,19 @@ interface BoardRow {
   wsId: string
   wsTag: string
   issue: IssueListItem
+  /** When this issue's name collides across workspaces (`issue.nameCollision`),
+   *  how many OTHER workspaces also claim the name — drives the warning tooltip.
+   *  Absent ⇒ no collision. */
+  dupOthers?: number
 }
+
+/** Normalised collision key — title, trimmed + lowercased. Mirrors the server's
+ *  `annotateNameCollisions` detection key. */
+const nameKey = (title: string): string => title.trim().toLowerCase()
 
 // ==================== Rows + groups ====================
 
-function IssueRow({ wsId, wsTag, issue, onOpen }: BoardRow & { onOpen: () => void }) {
+function IssueRow({ wsId, wsTag, issue, dupOthers, onOpen }: BoardRow & { onOpen: () => void }) {
   const terminal = issue.status === 'done' || issue.status === 'canceled'
   return (
     <li>
@@ -142,6 +151,17 @@ function IssueRow({ wsId, wsTag, issue, onOpen }: BoardRow & { onOpen: () => voi
         <span title={issue.title} className="min-w-0 flex-1 truncate text-[13px] text-text">
           {issue.title}
         </span>
+        {issue.nameCollision && (
+          <span
+            title={`Duplicate name — also used in ${dupOthers ?? 1} other workspace${
+              (dupOthers ?? 1) === 1 ? '' : 's'
+            }. A [[name]] is a global handle; resolve manually.`}
+            aria-label="Duplicate issue name across workspaces"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400"
+          >
+            <Copy size={10} aria-hidden /> dup
+          </span>
+        )}
         {issue.when && <CadencePill when={issue.when} />}
         <span className="hidden shrink-0 text-xs text-muted sm:inline" title={`Assignee: ${issue.assignee}`}>
           {issue.assignee}
@@ -260,9 +280,33 @@ export function IssuesBoard() {
 
   // Flatten every ok workspace's issues, tagged with the workspace, then
   // bucket by status in Linear's order. Empty buckets are hidden.
-  const rows: BoardRow[] = workspaces
-    .filter((w) => w.status === 'ok')
-    .flatMap((w) => (w.issues ?? []).map((issue) => ({ wsId: w.wsId, wsTag: w.tag, issue })))
+  const okWorkspaces = workspaces.filter((w) => w.status === 'ok')
+
+  // For each name, the set of workspaces that claim it — so a colliding row's
+  // warning tooltip can say "also in N other workspaces". The backend already
+  // flags `issue.nameCollision` (authoritative detection); this only supplies
+  // the count for the tooltip.
+  const wsByName = new Map<string, Set<string>>()
+  for (const w of okWorkspaces) {
+    for (const issue of w.issues ?? []) {
+      const key = nameKey(issue.title)
+      if (!key) continue
+      const set = wsByName.get(key) ?? new Set<string>()
+      set.add(w.wsId)
+      wsByName.set(key, set)
+    }
+  }
+
+  const rows: BoardRow[] = okWorkspaces.flatMap((w) =>
+    (w.issues ?? []).map((issue) => ({
+      wsId: w.wsId,
+      wsTag: w.tag,
+      issue,
+      dupOthers: issue.nameCollision
+        ? Math.max(0, (wsByName.get(nameKey(issue.title))?.size ?? 1) - 1)
+        : undefined,
+    })),
+  )
 
   const groups = STATUS_ORDER.map((status) => ({
     status,

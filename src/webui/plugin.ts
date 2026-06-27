@@ -25,6 +25,7 @@ import { createBarsRoutes } from './routes/bars.js'
 import { createReferenceRoutes } from './routes/reference.js'
 import { createInboxRoutes } from './routes/inbox.js'
 import { createEntityRoutes } from './routes/entities.js'
+import { createWikilinkRoutes } from './routes/wikilink.js'
 import { createVersionRoutes } from './routes/version.js'
 import { createAuthRoutes } from './routes/auth.js'
 import { createAuthMiddleware } from './middleware/auth.js'
@@ -228,6 +229,13 @@ export class WebPlugin implements Plugin {
     app.route(
       '/api/entities',
       createEntityRoutes({ entityStore: ctx.entityStore, registry: this.workspaceService.registry }),
+    )
+    // Cross-namespace [[name]] resolver — entities (global store) + issues (per-
+    // workspace scan) in one lookup so the UI can navigate or disambiguate a
+    // clicked wikilink. Same dep shape rationale as /api/entities above.
+    app.route(
+      '/api/wikilink',
+      createWikilinkRoutes({ entityStore: ctx.entityStore, service: this.workspaceService }),
     )
 
     // ==================== Mount opentypebb (market data HTTP) ====================

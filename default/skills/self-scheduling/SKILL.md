@@ -162,6 +162,25 @@ The markdown **body** below the closing `---` is the issue's description: free
 prose for you and the user. For an unscheduled item it's the whole point; for a
 scheduled item with no `what`, the body becomes part of the fire prompt.
 
+## Link entities and issues with `[[name]]`
+
+An issue body can reference things in the `[[]]` knowledge graph, exactly like
+any other note: write `[[name]]` to link a **tracked entity** (an asset ticker
+or topic, e.g. `[[vst]]`, `[[ai-data-center-power]]`) or **another issue** (by
+its id or title). The link shows up as a backlink on the target's page and is
+clickable in the issue detail — so an issue saying "blocked on
+`[[refactor-fetcher]]` until `[[vst]]` earnings clear" wires straight to both.
+
+Names are **global** and team-wide, not workspace-scoped — `[[vst]]` means the
+same thing everywhere, and there is no workspace prefix. Because of that, a
+**vague or short issue title can collide** with an issue of the same name in
+another workspace; nothing blocks you at write time, but the board flags such
+clashes with a duplicate-name warning in the UI **for you to clean up
+manually** (rename one, or merge them). So give an issue a **specific,
+self-describing title** (prefer `Split the data fetcher into source + transform`
+over `cleanup`) — it makes the issue a clean, unambiguous `[[ ]]` target and
+avoids the collision flag in the first place.
+
 ## Write `what` for a headless run
 
 The scheduled run is **headless — nobody is watching, and it cannot see this

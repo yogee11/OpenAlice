@@ -34,6 +34,7 @@ import {
   type ScheduleSnapshotWorkspace,
 } from './schedule/declaration.js';
 import {
+  annotateNameCollisions,
   detailIssue,
   snapshotBoardIssue,
   type IssueDetail,
@@ -41,6 +42,7 @@ import {
   type IssuesSnapshot,
   type IssuesSnapshotIssue,
   type IssuesSnapshotWorkspace,
+  type WikilinkIssueRef,
 } from './issues/board.js';
 import { HeadlessTaskRegistry, headlessLogPaths } from './headless-task-registry.js';
 
@@ -167,6 +169,11 @@ export interface WorkspaceService {
    *  headless run history, newest first). `null` when the workspace or the issue
    *  id is absent. Powers GET /api/issues/:wsId/:id. */
   issueDetail(wsId: string, id: string): Promise<IssueDetail | null>;
+  /** Resolve a `[[name]]` token to the issues across ALL workspaces that claim it.
+   *  Matches case-insensitively against an issue's `id` OR its `title` (either is a
+   *  valid name handle). Returns every match — 0, 1, or many (a collision the UI
+   *  disambiguates by wsId). Powers GET /api/wikilink/resolve. */
+  resolveIssuesByName(name: string): Promise<WikilinkIssueRef[]>;
   /** The headless-task management plane (cross-workspace; powers GET /api/headless). */
   headlessTasks: HeadlessTaskRegistry;
   /** Where dispatched tasks' full stdout/stderr logs land (read by the output route). */
@@ -610,7 +617,10 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         return { wsId: ws.id, tag: ws.tag, status: 'ok', issues };
       }),
     );
-    return { workspaces };
+    // Cross-workspace name-clash detection (mutates rows in place + returns the
+    // colliding display titles). Detection only — never enforced at write time.
+    const duplicateNames = annotateNameCollisions(workspaces);
+    return { workspaces, duplicateNames };
   };
 
   // Read-only DETAIL for ONE issue (GET /api/issues/:wsId/:id). Resolves the
@@ -640,6 +650,29 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     // Newest-first already (registry.list reverses); filter to this issue's runs.
     const runs = headlessTasks.list({ wsId: ws.id, issueId: issue.id });
     return { issue: detailIssue(issue, markers), runs };
+  };
+
+  // Resolve a `[[name]]` token to the issues (across ALL workspaces) that claim
+  // it. A token matches an issue when, case-insensitively, it equals the issue's
+  // `id` (filename slug) OR its `title` — both are legitimate name handles an
+  // author might link. Live read like the board; a bad workspace is skipped, not
+  // propagated. Multiple matches = a collision the UI disambiguates by wsId.
+  const resolveIssuesByName = async (name: string): Promise<WikilinkIssueRef[]> => {
+    const token = name.trim().toLowerCase();
+    if (!token) return [];
+    const out: WikilinkIssueRef[] = [];
+    await Promise.all(
+      registry.list().map(async (ws) => {
+        const res = await readWorkspaceIssues(ws.dir);
+        if (!res.ok) return;
+        for (const issue of res.issues) {
+          if (issue.id.toLowerCase() === token || issue.title.trim().toLowerCase() === token) {
+            out.push({ wsId: ws.id, wsTag: ws.tag, id: issue.id, title: issue.title });
+          }
+        }
+      }),
+    );
+    return out;
   };
 
   const pool = new SessionPool(
@@ -825,6 +858,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     scheduleSnapshot,
     issuesSnapshot,
     issueDetail,
+    resolveIssuesByName,
     headlessTasks,
     headlessLogsDir,
     isShuttingDown: () => shuttingDown,

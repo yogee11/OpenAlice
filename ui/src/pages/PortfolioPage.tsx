@@ -4,7 +4,7 @@ import { useAutoSave } from '../hooks/useAutoSave'
 import { useAccountHealth } from '../hooks/useAccountHealth'
 import { useWorkspace } from '../tabs/store'
 import { PageHeader } from '../components/PageHeader'
-import { EmptyState } from '../components/StateViews'
+import { EmptyState, Skeleton } from '../components/StateViews'
 import { EquityCurve } from '../components/EquityCurve'
 import { SnapshotDetail } from '../components/SnapshotDetail'
 import { Toggle } from '../components/Toggle'
@@ -238,6 +238,7 @@ export function PortfolioPage() {
         <div className="flex gap-6 items-start">
           {/* Main column */}
           <div className="flex-1 min-w-0 space-y-5">
+            {!lastRefresh ? <PortfolioSkeleton /> : <>
             <HeroMetrics equity={data.equity} curve={aggregateCurve?.total ?? null} />
 
             {curvePoints.length > 0 && (
@@ -288,6 +289,7 @@ export function PortfolioPage() {
             {allWalletLogs.length > 0 && (
               <TradeLog commits={allWalletLogs} />
             )}
+            </>}
           </div>
 
           {/* Right sidebar — FX rates */}
@@ -414,6 +416,63 @@ function HeroMetrics({ equity, curve }: {
           value={fmtPnl(realized, 'USD')}
           valueSign={signFromDelta(realized)}
         />
+      </div>
+    </div>
+  )
+}
+
+// ==================== Cold-start skeleton ====================
+
+/** First-load placeholder for the portfolio main column. Mirrors the real
+ *  layout's shapes (hero metrics → curve → account strip → positions) so the
+ *  page reads as "loading this" rather than a blank white pane while the broker
+ *  reads (which can be slow on a cold connect) come back. */
+function PortfolioSkeleton() {
+  return (
+    <div className="space-y-5" aria-hidden="true">
+      {/* Hero metrics */}
+      <div className="rounded-lg border border-border bg-bg-secondary p-5">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-9 w-48 mt-3" />
+        <div className="flex gap-8 mt-5">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="space-y-2">
+              <Skeleton className="h-2.5 w-16" />
+              <Skeleton className="h-4 w-20" />
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Equity curve */}
+      <Skeleton className="h-[220px] w-full rounded-lg" />
+      {/* Account strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-3 px-3.5 py-3 rounded-lg border border-border bg-bg-secondary">
+            <Skeleton className="h-1.5 w-1.5 rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-2.5 w-16" />
+            </div>
+            <Skeleton className="h-8 w-20" />
+          </div>
+        ))}
+      </div>
+      {/* Positions table */}
+      <div className="rounded-lg border border-border overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-border bg-bg-secondary">
+          <Skeleton className="h-3 w-32" />
+        </div>
+        <div className="divide-y divide-border">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 px-4 py-3.5">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-4 w-12" />
+              <Skeleton className="h-4 w-16 ml-auto" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

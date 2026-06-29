@@ -40,6 +40,29 @@ export function CenteredLoading({ label }: { label?: string }) {
   )
 }
 
+// ==================== Skeleton ====================
+
+/** Theme-aware shimmer placeholder for first-load states. Size + radius come
+ *  from `className` (e.g. "h-4 w-24 rounded"), so callers compose the real
+ *  layout's shapes — a metric row, a table row, a chart box — out of these
+ *  blocks instead of leaving a blank pane. The shimmer is the `.skeleton` class
+ *  in index.css; it honors prefers-reduced-motion. Decorative → aria-hidden. */
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`skeleton rounded-md ${className}`} aria-hidden="true" />
+}
+
+/** A stack of skeleton lines, the last one short like a paragraph tail. Handy
+ *  for text blocks and list rows where you just need "some lines are loading". */
+export function SkeletonText({ lines = 3, className = '' }: { lines?: number; className?: string }) {
+  return (
+    <div className={`flex flex-col gap-2 ${className}`} aria-hidden="true">
+      {Array.from({ length: lines }).map((_, i) => (
+        <div key={i} className={`skeleton h-3 rounded ${i === lines - 1 ? 'w-2/3' : 'w-full'}`} />
+      ))}
+    </div>
+  )
+}
+
 // ==================== EmptyState ====================
 
 interface EmptyStateProps {

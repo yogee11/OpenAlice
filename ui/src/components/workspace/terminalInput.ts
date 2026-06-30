@@ -19,7 +19,9 @@ export function keyMapForAgent(agent: string | null | undefined): KeyMap | undef
     case 'claude':
       return { 'shift+enter': '\x1b\r' }
     case 'codex':
-      return { 'shift+enter': '\n' }
+      // Codex is a crossterm TUI. It handles multiline as the modified
+      // Shift+Enter key event, not as a bare LF byte.
+      return { 'shift+enter': '\x1b[13;2u' }
     default:
       return undefined
   }

@@ -27,7 +27,7 @@ describe('terminal input helpers', () => {
 
   it('uses agent-specific Shift+Enter sequences', () => {
     expect(keyMapForAgent('claude')).toEqual({ 'shift+enter': '\x1b\r' })
-    expect(keyMapForAgent('codex')).toEqual({ 'shift+enter': '\n' })
+    expect(keyMapForAgent('codex')).toEqual({ 'shift+enter': '\x1b[13;2u' })
     expect(keyMapForAgent('shell')).toBeUndefined()
     expect(keyMapForAgent('opencode')).toBeUndefined()
     expect(keyMapForAgent(null)).toBeUndefined()

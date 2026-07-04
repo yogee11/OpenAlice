@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { TerminalOutputThemeRewriter, rewriteLightSgr } from '../terminalAnsiTheme'
+import { terminalThemeProfileForVariant } from '../terminalThemeProfile'
 
 const decoder = new TextDecoder()
 
@@ -28,14 +29,15 @@ describe('terminal ANSI theme rewriting', () => {
 
   it('leaves dark mode bytes untouched', () => {
     const data = new TextEncoder().encode('\x1b[100mhello\x1b[0m')
-    const out = new TerminalOutputThemeRewriter().rewrite(data, 'dark')
+    const out = new TerminalOutputThemeRewriter().rewrite(data, terminalThemeProfileForVariant('dark'))
     expect(out).toBe(data)
   })
 
   it('carries incomplete SGR sequences across light-mode chunks', () => {
     const rewriter = new TerminalOutputThemeRewriter()
-    const first = rewriter.rewrite(new TextEncoder().encode('\x1b[48;5;'), 'light')
-    const second = rewriter.rewrite(new TextEncoder().encode('8mhello'), 'light')
+    const profile = terminalThemeProfileForVariant('light')
+    const first = rewriter.rewrite(new TextEncoder().encode('\x1b[48;5;'), profile)
+    const second = rewriter.rewrite(new TextEncoder().encode('8mhello'), profile)
     expect(decoder.decode(first)).toBe('')
     expect(decoder.decode(second)).toBe('\x1b[48;2;244;241;232mhello')
   })

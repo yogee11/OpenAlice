@@ -1,12 +1,23 @@
-import type { ITheme } from '@xterm/xterm'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 import { useEffectiveTheme } from '../../theme/useEffectiveTheme'
-import { darkTheme, lightTheme } from './theme'
+import {
+  terminalThemeProfileForVariant,
+  type TerminalThemeProfile,
+  type TerminalThemeVariant,
+} from './terminalThemeProfile'
+export {
+  terminalClientThemeDTO,
+  terminalThemeProfileForVariant,
+  xtermThemeForVariant,
+  type TerminalClientThemeDTO,
+  type TerminalThemeProfile,
+  type TerminalThemeRgb,
+  type TerminalThemeVariant,
+} from './terminalThemeProfile'
 
 export type TerminalThemePreference = 'follow' | 'light' | 'dark'
-export type TerminalThemeVariant = 'light' | 'dark'
 
 const CYCLE: readonly TerminalThemePreference[] = ['follow', 'dark', 'light']
 
@@ -49,19 +60,16 @@ export function resolveTerminalThemeVariant(
   return preference
 }
 
-export function xtermThemeForVariant(variant: TerminalThemeVariant): ITheme {
-  return variant === 'light' ? lightTheme : darkTheme
-}
-
 export function useResolvedTerminalTheme(): {
   preference: TerminalThemePreference
   variant: TerminalThemeVariant
-  xtermTheme: ITheme
+  profile: TerminalThemeProfile
 } {
   const appTheme = useEffectiveTheme()
   const preference = useTerminalThemeStore((s) => s.preference)
   const variant = resolveTerminalThemeVariant(preference, appTheme)
-  return { preference, variant, xtermTheme: xtermThemeForVariant(variant) }
+  const profile = terminalThemeProfileForVariant(variant)
+  return { preference, variant, profile }
 }
 
 export function useResolvedTerminalThemeVariant(): TerminalThemeVariant {

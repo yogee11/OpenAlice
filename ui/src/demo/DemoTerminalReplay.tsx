@@ -29,14 +29,14 @@ function ReplayPane({ label, transcript }: { label: string; transcript: Transcri
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [done, setDone] = useState(false)
   const [replayKey, setReplayKey] = useState(0)
-  const { xtermTheme } = useResolvedTerminalTheme()
+  const { profile: terminalThemeProfile } = useResolvedTerminalTheme()
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
     const term = new Xterm({
-      theme: xtermTheme,
+      theme: terminalThemeProfile.xtermTheme,
       fontFamily:
         'ui-monospace, "SF Mono", Menlo, Monaco, "Cascadia Mono", "DejaVu Sans Mono", monospace',
       fontSize: 13,
@@ -114,7 +114,7 @@ function ReplayPane({ label, transcript }: { label: string; transcript: Transcri
       webgl?.dispose()
       term.dispose()
     }
-  }, [transcript, replayKey, xtermTheme])
+  }, [transcript, replayKey, terminalThemeProfile])
 
   return (
     <div className="terminal-shell">

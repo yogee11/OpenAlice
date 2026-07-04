@@ -227,17 +227,17 @@ export function TerminalView(props: TerminalViewProps): ReactElement {
   // Terminal palette is its own preference, not just the app chrome theme. Read
   // the current value through a ref so the connect effect doesn't recreate the
   // terminal on a theme flip — a separate effect re-skins the live instance.
-  const { variant: terminalThemeVariant, xtermTheme } = useResolvedTerminalTheme();
-  const themeRef = useRef(xtermTheme);
-  themeRef.current = xtermTheme;
-  const themeVariantRef = useRef(terminalThemeVariant);
-  themeVariantRef.current = terminalThemeVariant;
+  const { profile: terminalThemeProfile } = useResolvedTerminalTheme();
+  const themeRef = useRef(terminalThemeProfile.xtermTheme);
+  themeRef.current = terminalThemeProfile.xtermTheme;
+  const themeProfileRef = useRef(terminalThemeProfile);
+  themeProfileRef.current = terminalThemeProfile;
   const outputThemeRewriterRef = useRef(new TerminalOutputThemeRewriter());
   const termRef = useRef<Xterm | null>(null);
 
   useEffect(() => {
-    if (termRef.current) termRef.current.options.theme = xtermTheme;
-  }, [xtermTheme]);
+    if (termRef.current) termRef.current.options.theme = terminalThemeProfile.xtermTheme;
+  }, [terminalThemeProfile]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -337,7 +337,7 @@ export function TerminalView(props: TerminalViewProps): ReactElement {
     };
 
     const writeToTerm = (data: Uint8Array): void => {
-      const themedData = outputThemeRewriterRef.current.rewrite(data, themeVariantRef.current);
+      const themedData = outputThemeRewriterRef.current.rewrite(data, themeProfileRef.current);
       try {
         term.write(themedData);
       } catch (err) {

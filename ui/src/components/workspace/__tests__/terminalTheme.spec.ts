@@ -9,6 +9,8 @@ let resolveTerminalThemeVariant: (
 ) => TerminalThemeVariant
 let xtermThemeForVariant: (variant: TerminalThemeVariant) => typeof darkTheme
 let readTerminalThemePreference: () => TerminalThemePreference
+let terminalThemeProfileForVariant: typeof import('../terminalTheme').terminalThemeProfileForVariant
+let terminalClientThemeDTO: typeof import('../terminalTheme').terminalClientThemeDTO
 
 beforeAll(async () => {
   window.localStorage.clear()
@@ -23,6 +25,8 @@ beforeAll(async () => {
   const mod = await import('../terminalTheme')
   resolveTerminalThemeVariant = mod.resolveTerminalThemeVariant
   xtermThemeForVariant = mod.xtermThemeForVariant
+  terminalThemeProfileForVariant = mod.terminalThemeProfileForVariant
+  terminalClientThemeDTO = mod.terminalClientThemeDTO
   readTerminalThemePreference = () => mod.useTerminalThemeStore.getState().preference
 })
 
@@ -44,5 +48,17 @@ describe('terminal theme helpers', () => {
   it('maps concrete variants to xterm palettes', () => {
     expect(xtermThemeForVariant('dark')).toBe(darkTheme)
     expect(xtermThemeForVariant('light')).toBe(lightTheme)
+  })
+
+  it('exposes a muxy-style terminal client theme profile', () => {
+    const light = terminalThemeProfileForVariant('light')
+    const dto = terminalClientThemeDTO(light)
+
+    expect(light.xtermTheme).toBe(lightTheme)
+    expect(dto.fg).toBe(0x1c2a41)
+    expect(dto.bg).toBe(0xfaf8f1)
+    expect(dto.palette).toHaveLength(16)
+    expect(dto.palette[0]).toBe(0x1c2a41)
+    expect(dto.palette[15]).toBe(0x24292f)
   })
 })

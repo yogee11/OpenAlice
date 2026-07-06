@@ -53,7 +53,8 @@ if (manifest?.pi?.mode !== 'npm') {
   console.error(`[desktop-package] expected manifest.pi.mode="npm", got ${JSON.stringify(manifest?.pi?.mode)}`)
   process.exit(1)
 }
-if (manifest?.pi?.cli !== 'vendor/pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js') {
+const piCli = typeof manifest?.pi?.cli === 'string' ? manifest.pi.cli.replaceAll('\\', '/') : null
+if (piCli !== 'vendor/pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js') {
   console.error(`[desktop-package] unexpected manifest.pi.cli: ${JSON.stringify(manifest?.pi?.cli)}`)
   process.exit(1)
 }

@@ -78,7 +78,7 @@ async function vendorPi() {
     existingManifest?.pi?.mode === 'npm' &&
     existsSync(piCliPath)
   ) {
-    console.log(`[vendor-runtime] Pi ${PI_VERSION} already present at ${relative(repoRoot, piCliPath)}`)
+    console.log(`[vendor-runtime] Pi ${PI_VERSION} already present at ${relativeForLog(piCliPath)}`)
     return
   }
 
@@ -101,7 +101,7 @@ async function vendorPi() {
   if (!existsSync(piCliPath)) {
     throw new Error(`managed Pi CLI missing after npm ci: ${piCliPath}`)
   }
-  console.log(`[vendor-runtime] Pi CLI -> ${relative(repoRoot, piCliPath)}`)
+  console.log(`[vendor-runtime] Pi CLI -> ${relativeForLog(piCliPath)}`)
 }
 
 async function download(url) {
@@ -146,12 +146,20 @@ async function writeManifest() {
       version: PI_VERSION,
       mode: 'npm',
       root: 'vendor/pi',
-      cli: relative(repoRoot, piCliPath),
+      cli: relativeForManifest(piCliPath),
       node: 'electron',
     },
   }
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
-  console.log(`[vendor-runtime] manifest -> ${relative(repoRoot, manifestPath)}`)
+  console.log(`[vendor-runtime] manifest -> ${relativeForLog(manifestPath)}`)
+}
+
+function relativeForManifest(path) {
+  return relative(repoRoot, path).replaceAll('\\', '/')
+}
+
+function relativeForLog(path) {
+  return relative(repoRoot, path)
 }
 
 main().catch((err) => {

@@ -92,7 +92,11 @@ async function vendorPi() {
     await writeFile(resolve(piRoot, asset.name), bytes)
   }
 
-  run('npm ci for managed Pi', 'npm', ['ci', '--omit=dev', '--ignore-scripts'], { cwd: piRoot })
+  run('npm ci for managed Pi', process.platform === 'win32' ? 'npm.cmd' : 'npm', [
+    'ci',
+    '--omit=dev',
+    '--ignore-scripts',
+  ], { cwd: piRoot })
 
   if (!existsSync(piCliPath)) {
     throw new Error(`managed Pi CLI missing after npm ci: ${piCliPath}`)

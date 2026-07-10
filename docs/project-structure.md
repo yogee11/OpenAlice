@@ -201,7 +201,7 @@ generated `src/migrations/INDEX.md`.
 | Shared Alice ↔ UTA shapes | `packages/uta-protocol/` and both callers |
 | Renderer/API surface | `ui/`, `src/webui/`, and matching demo handlers |
 | Issues, schedules, headless runs, Inbox delivery | [Workspace issues and scheduling](workspace-issues-and-scheduling.md) |
-| Legacy EventLog/Flow/webhook paths | [Event-system retirement note](event-system.md) |
+| Retired event-bus scheduler and UTA journal boundary | [Event-system retirement note](event-system.md) |
 | User-state schema | `src/migrations/` + generated migration index |
 | Process lock/recovery | `packages/guardian-runtime/` and all three launchers |
 

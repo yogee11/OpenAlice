@@ -15,6 +15,7 @@ import {
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog';
 import { Skeleton } from '../StateViews';
 import { workspaceDisplayName, workspaceDisplayTitle } from './display';
+import { orderSessionsForSidebar, orderWorkspacesForSidebar } from './sidebar-order';
 
 /**
  * Workspace launcher sidebar.
@@ -81,6 +82,10 @@ export function Sidebar(props: SidebarProps): ReactElement {
   const { t } = useTranslation();
   const [showCreate, setShowCreate] = useState(false);
   const showListError = Boolean(props.listError && props.workspaces.length === 0);
+  const orderedWorkspaces = useMemo(
+    () => orderWorkspacesForSidebar(props.workspaces, props.selection),
+    [props.workspaces, props.selection],
+  );
 
   // Headless runs, polled once for the whole tree (not per-workspace) and
   // grouped client-side. Low-frequency passive surface → plain polling.
@@ -183,7 +188,7 @@ export function Sidebar(props: SidebarProps): ReactElement {
       {showListError && <div className="px-3 py-2 text-[12px] text-red">{props.listError}</div>}
 
       <div className="flex flex-col mt-0.5">
-        {props.workspaces.map((w) => (
+        {orderedWorkspaces.map((w) => (
           <WorkspaceRow
             key={w.id}
             workspace={w}
@@ -303,6 +308,13 @@ export function WorkspaceRow(props: WorkspaceRowProps): ReactElement {
   const isSelected = props.selection?.wsId === w.id && props.selection.sessionId === null;
   const hasRunning = w.sessions.some((s) => s.state === 'running');
   const runningCount = w.sessions.filter((s) => s.state === 'running').length;
+  const orderedSessions = useMemo(
+    () => orderSessionsForSidebar(
+      w.sessions,
+      props.selection?.wsId === w.id ? props.selection.sessionId : null,
+    ),
+    [w.sessions, w.id, props.selection],
+  );
 
   const [spawnMenuOpen, setSpawnMenuOpen] = useState(false);
   const plusBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -473,9 +485,9 @@ export function WorkspaceRow(props: WorkspaceRowProps): ReactElement {
         </button>
       </div>
 
-      {w.sessions.length > 0 && (
+      {orderedSessions.length > 0 && (
         <div className="ml-[18px] border-l border-border/50">
-          {w.sessions.map((s) => (
+          {orderedSessions.map((s) => (
             <SessionRow
               key={s.id}
               session={s}

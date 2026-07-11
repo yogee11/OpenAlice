@@ -4,7 +4,7 @@
  * Read-only view over `WorkspaceService.headlessTasks`: "what are the workers
  * doing" across every workspace. Dispatch lives at POST /api/workspaces/:id/
  * headless (it's per-workspace); this surface is the panel + per-task status
- * + its normalized reply/tool timeline and size-capped raw diagnostic logs.
+ * + its normalized reply/tool timeline and size-capped runtime diagnostics.
  */
 import { open, readFile, stat } from 'node:fs/promises'
 
@@ -85,7 +85,7 @@ export function createHeadlessRoutes(svc: WorkspaceService): Hono {
   })
 
   // GET /api/headless/:taskId/output?tailBytes= → compact normalized output +
-  // raw diagnostic tails. New runs read their live structured snapshot;
+  // bounded diagnostic tails. New runs read their live structured snapshot;
   // historical runs are parsed from a bounded stdout tail. Streams are null
   // when the log file doesn't exist (old task, pruned log, or spawn failure).
   app.get('/:taskId/output', async (c) => {

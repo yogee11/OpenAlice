@@ -151,6 +151,9 @@ export const codexAdapter: CliAdapter = {
   extractHeadlessOutputEvents(line: string): readonly HeadlessOutputEvent[] {
     try {
       const evt = JSON.parse(line) as Record<string, unknown>;
+      if (evt['type'] === 'error' && typeof evt['message'] === 'string') {
+        return [{ type: 'error', message: evt['message'] }];
+      }
       if (evt['type'] === 'turn.failed') {
         const error = evt['error'];
         const message = error && typeof error === 'object' && typeof (error as Record<string, unknown>)['message'] === 'string'
@@ -165,25 +168,37 @@ export const codexAdapter: CliAdapter = {
       if (!item || typeof item !== 'object') return [];
       const record = item as Record<string, unknown>;
       const id = typeof record['id'] === 'string' ? record['id'] : `codex-${record['type'] ?? 'item'}`;
+      if (evt['type'] === 'item.completed' && record['type'] === 'error' && typeof record['message'] === 'string') {
+        return [{ type: 'error', message: record['message'] }];
+      }
       if (evt['type'] === 'item.completed' && record['type'] === 'agent_message' && typeof record['text'] === 'string') {
         return [{ type: 'text', text: record['text'] }];
       }
       if (record['type'] === 'command_execution') {
         const input = typeof record['command'] === 'string' ? { command: record['command'] } : record['command'];
         if (evt['type'] === 'item.started') return [{ type: 'tool-start', id, name: 'Shell', input }];
+        const failed = record['status'] === 'failed' ||
+          record['status'] === 'declined' ||
+          (typeof record['exit_code'] === 'number' && record['exit_code'] !== 0);
         return [{
           type: 'tool-finish',
           id,
           name: 'Shell',
           ...(record['aggregated_output'] !== undefined ? { output: record['aggregated_output'] } : {}),
-          ...(typeof record['exit_code'] === 'number' && record['exit_code'] !== 0 ? { isError: true } : {}),
+          ...(failed ? { isError: true } : {}),
         }];
       }
       if (record['type'] === 'file_change') {
         if (evt['type'] === 'item.started') {
           return [{ type: 'tool-start', id, name: 'File changes', input: record['changes'] }];
         }
-        return [{ type: 'tool-finish', id, name: 'File changes', output: record['changes'] }];
+        return [{
+          type: 'tool-finish',
+          id,
+          name: 'File changes',
+          output: record['changes'],
+          ...(record['status'] === 'failed' ? { isError: true } : {}),
+        }];
       }
       if (record['type'] === 'mcp_tool_call' || record['type'] === 'tool_call') {
         const name = typeof record['tool'] === 'string'
@@ -198,7 +213,28 @@ export const codexAdapter: CliAdapter = {
           type: 'tool-finish',
           id,
           name,
-          output: record['result'] ?? record['output'],
+          output: record['result'] ?? record['output'] ?? record['error'],
+          ...(record['status'] === 'failed' ? { isError: true } : {}),
+        }];
+      }
+      if (record['type'] === 'web_search') {
+        const input = { query: record['query'], action: record['action'] };
+        if (evt['type'] === 'item.started') return [{ type: 'tool-start', id, name: 'Web search', input }];
+        return [{ type: 'tool-finish', id, name: 'Web search', output: input }];
+      }
+      if (record['type'] === 'collab_tool_call') {
+        const rawTool = typeof record['tool'] === 'string' ? record['tool'] : 'collaboration';
+        const name = `Collaboration · ${rawTool.replaceAll('_', ' ')}`;
+        const input = {
+          ...(record['receiver_thread_ids'] !== undefined ? { receiverThreadIds: record['receiver_thread_ids'] } : {}),
+          ...(record['prompt'] !== undefined ? { prompt: record['prompt'] } : {}),
+        };
+        if (evt['type'] === 'item.started') return [{ type: 'tool-start', id, name, input }];
+        return [{
+          type: 'tool-finish',
+          id,
+          name,
+          output: record['agents_states'],
           ...(record['status'] === 'failed' ? { isError: true } : {}),
         }];
       }

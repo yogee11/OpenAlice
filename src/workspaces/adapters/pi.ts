@@ -271,6 +271,16 @@ export const piAdapter: CliAdapter = {
     }
   },
 
+  // JSON mode intentionally emits every streaming event. Its documented
+  // message_update payload contains both a cumulative partial message and the
+  // current message snapshot; tool_execution_update likewise carries partial
+  // progress. They are useful for live rendering, not durable one-shot
+  // diagnostics. The structured parser still sees the full stream.
+  keepHeadlessDiagnosticLine(line: string): boolean {
+    return !line.startsWith('{"type":"message_update"') &&
+      !line.startsWith('{"type":"tool_execution_update"');
+  },
+
   composeEnv(ctx: SpawnContext): Record<string, string> {
     // Do not force PI_OFFLINE. OpenAlice is a networked product and Pi may
     // download missing runtime tools during startup. A user or launcher can

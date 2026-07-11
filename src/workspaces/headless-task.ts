@@ -18,7 +18,7 @@
  *    circuit is anti-semantic for a one-shot task (exit == completion).
  *
  * The launcher normalizes each runtime's JSON event stream into a compact,
- * vendor-neutral reply/tool timeline while preserving size-capped raw logs for
+ * vendor-neutral reply/tool timeline while preserving size-capped operator
  * diagnostics. `inbox_push` remains the durable user-delivery channel.
  */
 import { createWriteStream } from 'node:fs';
@@ -54,7 +54,7 @@ export interface HeadlessTaskArgs {
   /**
    * Stream stdout/stderr to bounded operator logs (16MB per stream; the
    * in-memory tails keep the last 16KB). Pi emits cumulative message_update
-   * frames, so unbounded raw logs can otherwise grow into gigabytes.
+   * frames, so unbounded diagnostics can otherwise grow into gigabytes.
    */
   readonly stdoutFile?: string;
   readonly stderrFile?: string;
@@ -72,6 +72,8 @@ export interface HeadlessTaskArgs {
   readonly extractAssistantText?: (line: string) => string | null;
   /** Adapter-owned JSONL translator for response and tool blocks. */
   readonly extractOutputEvents?: (line: string) => readonly HeadlessOutputEvent[];
+  /** Adapter-owned compaction filter for persisted stdout diagnostics. */
+  readonly keepDiagnosticLine?: (line: string) => boolean;
   /**
    * Default false. The normal automation path refuses Windows npm .cmd shims
    * because the task prompt is user-controlled. Runtime readiness probes pass a
@@ -138,12 +140,14 @@ function makeStructuredOutputScanner(opts: {
   readonly onAssistantText: (text: string) => void;
   readonly extractOutputEvents?: (line: string) => readonly HeadlessOutputEvent[];
   readonly onOutputEvents: (events: readonly HeadlessOutputEvent[]) => void;
+  readonly onDiagnosticLine?: (rawLine: string, terminated: boolean) => void;
 }): { push(c: Buffer): void; finish(): void } {
   let buf = '';
   let sessionDone = false;
   const decoder = new StringDecoder('utf8');
 
-  const inspect = (raw: string) => {
+  const inspect = (raw: string, terminated: boolean) => {
+    opts.onDiagnosticLine?.(raw, terminated);
     const line = raw.trim();
     if (!line) return;
     if (!sessionDone && opts.extractSessionId) {
@@ -167,7 +171,7 @@ function makeStructuredOutputScanner(opts: {
   const drain = () => {
     let nl: number;
     while ((nl = buf.indexOf('\n')) !== -1) {
-      inspect(buf.slice(0, nl));
+      inspect(buf.slice(0, nl), true);
       buf = buf.slice(nl + 1);
     }
     if (buf.length > SCAN_LINE_MAX_BYTES) buf = '';
@@ -181,7 +185,7 @@ function makeStructuredOutputScanner(opts: {
     finish() {
       buf += decoder.end();
       drain();
-      if (buf.trim()) inspect(buf);
+      if (buf.length > 0) inspect(buf, false);
       buf = '';
     },
   };
@@ -192,7 +196,7 @@ interface BoundedLogStream {
   end(): void
 }
 
-/** Open a size-capped raw log stream; null (+ warn) on failure. */
+/** Open a size-capped diagnostic stream; null (+ warn) on failure. */
 async function openLogStream(path: string, logger: Logger, name: string): Promise<BoundedLogStream | null> {
   try {
     await mkdir(dirname(path), { recursive: true });
@@ -211,7 +215,7 @@ async function openLogStream(path: string, logger: Logger, name: string): Promis
         }
         if (chunk.length > remaining) {
           capped = true;
-          ws.write(Buffer.from('\n… raw log capped at 16MB; use structured output …\n'));
+          ws.write(Buffer.from('\n… diagnostic log capped at 16MB; use structured output …\n'));
         }
       },
       end() {
@@ -285,7 +289,8 @@ export async function runHeadlessTask(args: HeadlessTaskArgs): Promise<HeadlessT
   const structuredWriter = createStructuredSnapshotWriter(args.structuredFile, logger);
   const outSink = makeTailSink(OUTPUT_TAIL_BYTES);
   const errSink = makeTailSink(OUTPUT_TAIL_BYTES);
-  const scanner = args.extractSessionId || args.extractAssistantText || args.extractOutputEvents
+  let outFile: BoundedLogStream | null = null;
+  const scanner = args.extractSessionId || args.extractAssistantText || args.extractOutputEvents || args.keepDiagnosticLine
     ? makeStructuredOutputScanner({
         ...(args.extractSessionId ? { extractSessionId: args.extractSessionId } : {}),
         ...(args.extractAssistantText ? { extractAssistantText: args.extractAssistantText } : {}),
@@ -308,6 +313,23 @@ export async function runHeadlessTask(args: HeadlessTaskArgs): Promise<HeadlessT
             structuredWriter?.schedule(snapshot);
           }
         },
+        ...(args.keepDiagnosticLine
+          ? {
+              onDiagnosticLine: (rawLine: string, terminated: boolean) => {
+                const line = rawLine.trim();
+                let keep = true;
+                try {
+                  keep = !line || args.keepDiagnosticLine?.(line) !== false;
+                } catch (err) {
+                  logger.warn('headless.diagnostic_filter_failed', { err });
+                }
+                if (!keep) return;
+                const chunk = Buffer.from(terminated ? `${rawLine}\n` : rawLine);
+                outSink.push(chunk);
+                outFile?.write(chunk);
+              },
+            }
+          : {}),
       })
     : null;
   // win32: resolve the bare CLI name against PATH × PATHEXT. Native-exe agents
@@ -343,7 +365,7 @@ export async function runHeadlessTask(args: HeadlessTaskArgs): Promise<HeadlessT
   }
   const [spawnFile, ...spawnArgs] = resolved.argv;
   if (!spawnFile) throw new Error('headless: empty command after resolution');
-  const outFile = args.stdoutFile ? await openLogStream(args.stdoutFile, logger, 'stdout') : null;
+  outFile = args.stdoutFile ? await openLogStream(args.stdoutFile, logger, 'stdout') : null;
   const errFile = args.stderrFile ? await openLogStream(args.stderrFile, logger, 'stderr') : null;
   const child = spawn(spawnFile, spawnArgs, {
     cwd,
@@ -351,9 +373,11 @@ export async function runHeadlessTask(args: HeadlessTaskArgs): Promise<HeadlessT
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.stdout?.on('data', (d: Buffer) => {
-    outSink.push(d);
+    if (!args.keepDiagnosticLine) {
+      outSink.push(d);
+      outFile?.write(d);
+    }
     scanner?.push(d);
-    outFile?.write(d);
   });
   child.stderr?.on('data', (d: Buffer) => {
     errSink.push(d);

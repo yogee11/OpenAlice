@@ -214,6 +214,15 @@ export interface CliAdapter {
   /** Translate one native JSONL line into vendor-neutral response/tool events. */
   extractHeadlessOutputEvents?(line: string): readonly HeadlessOutputEvent[];
 
+  /**
+   * Decide whether one complete stdout line belongs in the bounded diagnostic
+   * log/tail. Structured parsers still see every line. Use this for documented
+   * high-frequency transient events (Pi's cumulative `message_update` and
+   * `tool_execution_update`) that are useful to a live TUI but pathological in
+   * a persisted one-shot run log. Omit to preserve stdout byte-for-byte.
+   */
+  keepHeadlessDiagnosticLine?(line: string): boolean;
+
   /** Optional per-CLI env adjustments on top of `spawn-env.ts`'s baseline. */
   envOverrides?(parent: NodeJS.ProcessEnv): EnvOverrides;
 

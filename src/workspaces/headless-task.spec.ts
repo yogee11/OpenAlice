@@ -142,7 +142,7 @@ describe('runHeadlessTask', () => {
     expect(r.structured.blocks).toHaveLength(2);
   });
 
-  it('streams raw stdout/stderr to log files beyond the 16KB in-memory tails', async () => {
+  it('streams stdout/stderr diagnostics beyond the 16KB in-memory tails', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'headless-log-'));
     try {
       // 64KB of stdout — far past the 16KB tail budget.
@@ -171,6 +171,49 @@ describe('runHeadlessTask', () => {
       }
       expect(full.length).toBe(64 * 1024);
       expect(await readFile(stderrFile, 'utf8')).toBe('E-DIAG');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('compacts line-oriented diagnostics without hiding lines from structured parsing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'headless-filtered-log-'));
+    try {
+      const stdoutFile = join(dir, 't1.stdout.log');
+      const lines = [
+        JSON.stringify({ type: 'message_update', text: 'cumulative snapshot' }),
+        JSON.stringify({ type: 'tool_execution_update', text: 'partial tool output' }),
+        JSON.stringify({ type: 'message_end', text: 'Final reply' }),
+      ];
+      const seen: string[] = [];
+      const result = await runHeadlessTask({
+        command: ['node', '-e', `process.stdout.write(${JSON.stringify(`${lines.join('\n')}\n`)})`],
+        cwd: process.cwd(),
+        env: baseEnv,
+        timeoutMs: 5_000,
+        logger: noopLogger,
+        stdoutFile,
+        keepDiagnosticLine: (line) => !line.includes('_update"'),
+        extractOutputEvents: (line) => {
+          seen.push(line);
+          const event = JSON.parse(line) as { type?: string; text?: string };
+          return event.type === 'message_end' && event.text
+            ? [{ type: 'text' as const, text: event.text }]
+            : [];
+        },
+      });
+      let diagnostic = '';
+      for (let i = 0; i < 40 && !diagnostic.includes('message_end'); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        diagnostic = await readFile(stdoutFile, 'utf8').catch(() => '');
+      }
+      expect(seen).toHaveLength(3);
+      expect(result.structured.assistantText).toBe('Final reply');
+      expect(result.stdoutTail).toContain('message_end');
+      expect(result.stdoutTail).not.toContain('message_update');
+      expect(diagnostic).toContain('message_end');
+      expect(diagnostic).not.toContain('message_update');
+      expect(diagnostic).not.toContain('tool_execution_update');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -207,7 +250,7 @@ describe('runHeadlessTask', () => {
     }
   });
 
-  it('caps each raw diagnostic stream at 16MB', async () => {
+  it('caps each diagnostic stream at 16MB', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'headless-log-cap-'));
     try {
       const stdoutFile = join(dir, 't1.stdout.log');
@@ -227,7 +270,7 @@ describe('runHeadlessTask', () => {
       }
       const stored = await readFile(stdoutFile, 'utf8');
       expect(size).toBeLessThan(16 * 1024 * 1024 + 256);
-      expect(stored).toContain('raw log capped at 16MB');
+      expect(stored).toContain('diagnostic log capped at 16MB');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

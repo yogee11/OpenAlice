@@ -622,6 +622,9 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       ...(adapter.extractHeadlessOutputEvents
         ? { extractOutputEvents: adapter.extractHeadlessOutputEvents.bind(adapter) }
         : {}),
+      ...(adapter.keepHeadlessDiagnosticLine
+        ? { keepDiagnosticLine: adapter.keepHeadlessDiagnosticLine.bind(adapter) }
+        : {}),
     });
     return { result, source: effectiveSource };
   };
@@ -869,6 +872,9 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         : {}),
       ...(adapter.extractHeadlessOutputEvents
         ? { extractOutputEvents: adapter.extractHeadlessOutputEvents.bind(adapter) }
+        : {}),
+      ...(adapter.keepHeadlessDiagnosticLine
+        ? { keepDiagnosticLine: adapter.keepHeadlessDiagnosticLine.bind(adapter) }
         : {}),
       ...(opts.onSessionId ? { onSessionId: opts.onSessionId } : {}),
     });

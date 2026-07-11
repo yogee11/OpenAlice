@@ -81,7 +81,10 @@ export class HeadlessOutputAccumulator {
 
       if (event.type === 'error') {
         const message = clipText(event.message.trim(), MAX_TOOL_VALUE_CHARS)
-        if (message) this.push({ type: 'error', message })
+        const previous = this.blocks[this.blocks.length - 1]
+        if (message && !(previous?.type === 'error' && previous.message === message)) {
+          this.push({ type: 'error', message })
+        }
         continue
       }
 

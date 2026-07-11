@@ -17,6 +17,7 @@ export interface WorkspaceAcceptanceReceipt {
     readonly shellCliRoundTrip: boolean
     readonly managedPiAssistantReply: boolean
     readonly managedPiStructuredOutput: boolean
+    readonly managedPiDiagnosticCompaction: boolean
     readonly managedPiCliSideEffect: boolean
     readonly cleanupComplete: boolean
   }
@@ -54,6 +55,7 @@ export async function runRendererWorkspaceAcceptanceSmoke(
       shellCliRoundTrip: false,
       managedPiAssistantReply: false,
       managedPiStructuredOutput: false,
+      managedPiDiagnosticCompaction: false,
       managedPiCliSideEffect: false,
       cleanupComplete: false,
     }
@@ -67,6 +69,15 @@ export async function runRendererWorkspaceAcceptanceSmoke(
     const issueExists = (snapshot, workspaceId, issueId) => {
       const owner = snapshot?.workspaces?.find((row) => row.wsId === workspaceId)
       return Boolean(owner?.issues?.some((issue) => issue.id === issueId))
+    }
+    const waitForHeadlessRun = async (taskId) => {
+      const deadline = Date.now() + 120000
+      while (Date.now() < deadline) {
+        const record = await json(await fetch('/api/headless/' + encodeURIComponent(taskId)))
+        if (record.status !== 'running') return record
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+      throw new Error('managed Pi Automation run timed out: ' + taskId)
     }
     const decode = (value) => {
       if (typeof value === 'string') return value
@@ -208,32 +219,42 @@ export async function runRendererWorkspaceAcceptanceSmoke(
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           agent: 'pi',
-          wait: true,
           timeoutMs: 120000,
           prompt: '${ACCEPTANCE_MARKER}: execute the requested Workspace CLI acceptance action, then report completion.',
         }),
       }))
-      if (headless.killed || headless.exitCode !== 0) {
+      const headlessRecord = await waitForHeadlessRun(headless.taskId)
+      const headlessOutput = await json(await fetch('/api/headless/' + encodeURIComponent(headless.taskId) + '/output'))
+      if (headlessRecord.status !== 'done' || headlessRecord.killed || headlessRecord.exitCode !== 0) {
         throw new Error('managed Pi headless run failed: ' + JSON.stringify({
-          exitCode: headless.exitCode,
-          killed: headless.killed,
-          stderrTail: headless.stderrTail,
+          status: headlessRecord.status,
+          exitCode: headlessRecord.exitCode,
+          killed: headlessRecord.killed,
+          error: headlessRecord.error,
+          stderr: headlessOutput.stderr,
         }))
       }
-      if (headless.assistantText?.trim() !== '${ASSISTANT_TEXT}') {
-        throw new Error('managed Pi assistant reply was not decoded: ' + JSON.stringify(headless.assistantText))
+      if (headlessOutput.structured?.assistantText?.trim() !== '${ASSISTANT_TEXT}') {
+        throw new Error('managed Pi assistant reply was not decoded: ' + JSON.stringify(headlessOutput.structured?.assistantText))
       }
       checks.managedPiAssistantReply = true
       if (
-        headless.structured?.schemaVersion !== 1 ||
-        headless.structured?.assistantText?.trim() !== '${ASSISTANT_TEXT}' ||
-        typeof headless.structured?.metrics?.toolCalls !== 'number' ||
-        headless.structured.metrics.toolCalls < 1 ||
-        !headless.structured?.blocks?.some((block) => block?.type === 'tool' && block?.status === 'completed')
+        headlessOutput.structured?.schemaVersion !== 1 ||
+        typeof headlessOutput.structured?.metrics?.toolCalls !== 'number' ||
+        headlessOutput.structured.metrics.toolCalls < 1 ||
+        !headlessOutput.structured?.blocks?.some((block) => block?.type === 'tool' && block?.status === 'completed')
       ) {
-        throw new Error('managed Pi structured output was not decoded: ' + JSON.stringify(headless.structured))
+        throw new Error('managed Pi structured output was not decoded: ' + JSON.stringify(headlessOutput.structured))
       }
       checks.managedPiStructuredOutput = true
+      const diagnosticText = headlessOutput.stdout?.text || ''
+      if (
+        diagnosticText.includes('"type":"message_update"') ||
+        diagnosticText.includes('"type":"tool_execution_update"')
+      ) {
+        throw new Error('managed Pi diagnostic log retained transient updates')
+      }
+      checks.managedPiDiagnosticCompaction = true
 
       const agentIssues = await json(await fetch('/api/issues'))
       if (!issueExists(agentIssues, workspaceId, agentIssueId)) {

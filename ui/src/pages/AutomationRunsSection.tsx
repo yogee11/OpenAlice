@@ -86,7 +86,7 @@ function ToolBlock({ block }: { block: Extract<HeadlessMessageBlock, { type: 'to
   )
 }
 
-/** Parsed response/tool timeline with raw logs retained as a diagnostic layer. */
+/** Parsed response/tool timeline with bounded runtime diagnostics as fallback. */
 function RunOutput({ task }: { task: HeadlessTaskRecord }) {
   const [output, setOutput] = useState<HeadlessOutput | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -156,7 +156,7 @@ function RunOutput({ task }: { task: HeadlessTaskRecord }) {
             ))}
           </div>
           {output.structured.truncated && (
-            <p className="mt-2 text-[11px] text-amber-400">Earlier activity was truncated; raw logs remain available below.</p>
+            <p className="mt-2 text-[11px] text-amber-400">Earlier activity was truncated; runtime diagnostics remain available below.</p>
           )}
         </section>
       )}
@@ -164,7 +164,7 @@ function RunOutput({ task }: { task: HeadlessTaskRecord }) {
       <details className="rounded-lg border border-border/60">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-text-muted hover:text-text">
           <TerminalSquare size={13} />
-          Raw runtime logs
+          Runtime diagnostics
         </summary>
         <div className="space-y-2 border-t border-border/50 p-2">
           {output.stdout && (
@@ -179,7 +179,7 @@ function RunOutput({ task }: { task: HeadlessTaskRecord }) {
               {output.stderr.text}
             </pre>
           )}
-          {!output.stdout && !output.stderr && <div className="text-xs text-text-muted">No raw log for this run.</div>}
+          {!output.stdout && !output.stderr && <div className="text-xs text-text-muted">No runtime diagnostics for this run.</div>}
         </div>
       </details>
     </div>

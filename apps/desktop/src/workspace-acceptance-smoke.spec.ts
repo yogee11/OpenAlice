@@ -15,7 +15,9 @@ describe('Workspace acceptance renderer source', () => {
     }
     expect(source).toContain('__OPENALICE_WORKSPACE_%s_FAILED__ %s %s\\\\n%s\\\\n')
     expect(source).toContain('managedPiStructuredOutput')
+    expect(source).toContain('managedPiDiagnosticCompaction')
     expect(source).toContain("block?.type === 'tool' && block?.status === 'completed'")
+    expect(source).toContain("diagnosticText.includes('\"type\":\"message_update\"')")
     expect(() => new Function(`return ${source}`)).not.toThrow()
   })
 })

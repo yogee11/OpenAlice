@@ -57,6 +57,8 @@ describe('headless structured output', () => {
 
   it('keeps runtime-level failures as error blocks', () => {
     const codex = parse(codexAdapter, [
+      { type: 'item.completed', item: { id: 'e1', type: 'error', message: 'Codex reconnecting' } },
+      { type: 'error', message: 'Codex stream failed' },
       { type: 'turn.failed', error: { message: 'Codex provider unavailable' } },
     ])
     const opencode = parse(opencodeAdapter, [
@@ -70,9 +72,36 @@ describe('headless structured output', () => {
         },
       },
     ])
-    expect(codex.blocks).toContainEqual({ type: 'error', message: 'Codex provider unavailable' })
+    expect(codex.blocks).toEqual([
+      { type: 'error', message: 'Codex reconnecting' },
+      { type: 'error', message: 'Codex stream failed' },
+      { type: 'error', message: 'Codex provider unavailable' },
+    ])
     expect(opencode.blocks).toContainEqual({ type: 'error', message: 'OpenCode provider unavailable' })
     expect(pi.blocks).toContainEqual({ type: 'error', message: 'Pi provider unavailable' })
+  })
+
+  it('deduplicates repeated terminal runtime errors', () => {
+    const output = parse(codexAdapter, [
+      { type: 'error', message: 'provider unavailable' },
+      { type: 'turn.failed', error: { message: 'provider unavailable' } },
+    ])
+    expect(output.blocks).toEqual([{ type: 'error', message: 'provider unavailable' }])
+  })
+
+  it('normalizes current Codex web-search, MCP, and collaboration items', () => {
+    const output = parse(codexAdapter, [
+      { type: 'item.started', item: { id: 'w1', type: 'web_search', query: 'OpenAlice', action: { type: 'search' } } },
+      { type: 'item.completed', item: { id: 'w1', type: 'web_search', query: 'OpenAlice', action: { type: 'search' } } },
+      { type: 'item.started', item: { id: 'm1', type: 'mcp_tool_call', tool: 'lookup', arguments: { q: 'x' }, status: 'in_progress' } },
+      { type: 'item.completed', item: { id: 'm1', type: 'mcp_tool_call', tool: 'lookup', error: { message: 'offline' }, status: 'failed' } },
+      { type: 'item.started', item: { id: 'c1', type: 'collab_tool_call', tool: 'spawn_agent', receiver_thread_ids: [], prompt: 'inspect', status: 'in_progress' } },
+      { type: 'item.completed', item: { id: 'c1', type: 'collab_tool_call', tool: 'spawn_agent', receiver_thread_ids: ['child'], agents_states: { child: { status: 'completed' } }, status: 'completed' } },
+    ])
+    expect(output.metrics).toEqual({ textBlocks: 0, toolCalls: 3, toolFailures: 1 })
+    expect(output.blocks).toContainEqual(expect.objectContaining({ id: 'w1', name: 'Web search', status: 'completed' }))
+    expect(output.blocks).toContainEqual(expect.objectContaining({ id: 'm1', name: 'lookup', status: 'failed', output: { message: 'offline' } }))
+    expect(output.blocks).toContainEqual(expect.objectContaining({ id: 'c1', name: 'Collaboration · spawn agent', status: 'completed' }))
   })
 
   it('normalizes Pi execution events and failed tools', () => {
@@ -89,6 +118,9 @@ describe('headless structured output', () => {
     const cumulativeFrame = '{"type":"message_update", deliberately-not-valid-json'
     expect(piAdapter.extractHeadlessOutputEvents?.(cumulativeFrame)).toEqual([])
     expect(piAdapter.extractHeadlessAssistantText?.(cumulativeFrame)).toBeNull()
+    expect(piAdapter.keepHeadlessDiagnosticLine?.(cumulativeFrame)).toBe(false)
+    expect(piAdapter.keepHeadlessDiagnosticLine?.('{"type":"tool_execution_update"}')).toBe(false)
+    expect(piAdapter.keepHeadlessDiagnosticLine?.('{"type":"message_end"}')).toBe(true)
   })
 
   it('accepts OpenCode part.state tool snapshots', () => {

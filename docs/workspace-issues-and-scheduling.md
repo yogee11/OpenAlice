@@ -118,16 +118,27 @@ is active:
 - tool name, input, output, and `running | completed | failed` status;
 - compact metrics for reply presence, tool count, and tool failures.
 
+The native stream contracts differ materially:
+
+| Runtime | Native one-shot stream | Normalization posture |
+|---|---|---|
+| Claude Code | completed assistant/tool messages plus result | pair `tool_use` / `tool_result`; keep the latest assistant result |
+| Codex | thread/turn lifecycle and started/updated/completed items | commands, file changes, MCP, web search, and collaboration become tools; stream/turn/error items become errors |
+| opencode | completed text/tool parts plus step boundaries | terminal tool snapshots become one completed/failed tool block; no token-delta persistence |
+| Pi | every session event, including cumulative message/tool updates | parse final messages and tool boundaries; discard transient updates from diagnostics before disk |
+
 Automation reads a debounced `.structured.json` snapshot instead of replaying
 an entire vendor log. This makes live polling cheap and gives future workbench
 orchestration a stable contract independent of CLI versions. Runs created before
 this contract are parsed best-effort from the last 2 MB of stdout when opened.
 
-Raw stdout/stderr remain available only as a diagnostic fallback. Each stream
-is capped at 16 MB because Pi's JSON mode can emit cumulative `message_update`
-frames; appending every cumulative frame without a cap can otherwise turn one
-normal conversation into a multi-gigabyte log. Normalized output is separately
-bounded to 300 blocks, 64 KB per text reply, and 8 KB per tool input/output.
+Bounded stdout/stderr diagnostics remain as a fallback. Adapters may discard
+documented high-frequency transient events before persistence: Pi drops
+`message_update` (which repeats both the cumulative partial and current message)
+and `tool_execution_update`, while retaining final messages, tool boundaries,
+errors, and lifecycle events. Each diagnostic stream is still capped at 16 MB
+as a second guard. Normalized output is separately bounded to 300 blocks, 64 KB
+per text reply, and 8 KB per tool input/output.
 
 ## Delivery and Trading Safety
 
@@ -168,7 +179,7 @@ human approval boundaries.
 | `src/workspaces/headless-task-registry.ts` | Concurrent run records, capacity projection, and log pruning |
 | `src/workspaces/headless-output.ts` | Vendor-neutral reply/tool block contract and accumulator |
 | `src/workspaces/adapters/{claude,codex,opencode,pi}.ts` | Runtime-specific JSON event translation |
-| `src/webui/routes/headless.ts` | Cross-workspace capacity, task, normalized output, and raw-tail API |
+| `src/webui/routes/headless.ts` | Cross-workspace capacity, task, normalized output, and diagnostic-tail API |
 | `ui/src/pages/AutomationRunsSection.tsx` | Run list, final reply, tool activity, and diagnostics UI |
 | `src/tool/issue-tools.ts` | Workspace-scoped issue CLI/MCP tools |
 | `src/tool/inbox-push.ts` | Headless/interactive delivery to Inbox |

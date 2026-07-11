@@ -61,9 +61,10 @@ steering concrete work.
    unless the user requests a review pause or earlier CI has a known failure.
 6. Delete the merged feature branch and return to updated `dev`.
 
-The PR is the integration carrier and audit record, not a synchronous CI or
-approval pause. Remote CI is one-increment-delayed feedback in this mode: it
-continues after merge and must be checked before the next serial publication.
+The PR durably integrates the completed increment into `dev` and records its
+diff; it is not a synchronous CI or approval pause. Remote CI is
+one-increment-delayed feedback in this mode: it continues after merge and must
+be checked before the next serial publication.
 
 ### Parallel / contribution
 
@@ -80,6 +81,8 @@ For each coherent contribution:
 
 The open PR queue becomes the later acceptance surface. A subsequent
 interactive request does not retroactively authorize merging that queue.
+Because these PRs are not merged during the contribution loop, their pending CI
+never blocks starting the next independent contribution.
 
 ## Routine PR Flow
 

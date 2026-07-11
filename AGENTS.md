@@ -76,12 +76,15 @@ Choose delivery authority before implementation:
 | Parallel / contribution | Explicit `/goal` or direct request to autonomously find and contribute improvements | Leave each PR open for later review, return to `dev`, and continue from a fresh branch |
 
 A later interactive message does not retroactively authorize merging a parallel
-PR queue. Before publishing the next serial increment, inspect the previous
-increment's PR checks and post-merge `dev` run. A known failure blocks further
-stacking until repaired; a still-pending run does not by itself block serial
-work. `master` promotions, releases, explicit review pauses, and untrusted
-contributions keep their full synchronous gates. Detailed branch, PR,
-promotion, hotfix, and external-contribution procedures live in
+PR queue. Parallel work is already non-blocking because opening a PR does not
+pause the next contribution. In serial work the PR exists to durably integrate
+each completed increment into `dev`, so pending CI must not turn it into a
+synchronous lock. Before publishing the next serial increment, inspect the
+previous increment's PR checks and post-merge `dev` run. A known failure blocks
+further stacking until repaired; a still-pending run does not by itself block
+serial work. `master` promotions, releases, explicit review pauses, and
+untrusted contributions keep their full synchronous gates. Detailed branch,
+PR, promotion, hotfix, and external-contribution procedures live in
 [[docs/development-workflow.md]]
 ([Development workflow](docs/development-workflow.md)).
 

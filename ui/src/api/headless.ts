@@ -24,6 +24,35 @@ export interface HeadlessTaskRecord {
    *  present (and the run is finished) the run can be reopened as a normal
    *  interactive session via spawn { resume: agentSessionId }. */
   agentSessionId?: string
+  output?: {
+    hasAssistantReply: boolean
+    assistantPreview?: string
+    blockCount: number
+    toolCalls: number
+    toolFailures: number
+  }
+}
+
+export type HeadlessToolStatus = 'running' | 'completed' | 'failed'
+
+export type HeadlessMessageBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tool'; id: string; name: string; status: HeadlessToolStatus; input?: unknown; output?: unknown }
+  | { type: 'error'; message: string }
+
+export interface HeadlessStructuredOutput {
+  schemaVersion: 1
+  assistantText: string | null
+  blocks: HeadlessMessageBlock[]
+  metrics: { textBlocks: number; toolCalls: number; toolFailures: number }
+  truncated: boolean
+}
+
+export interface HeadlessListSnapshot {
+  tasks: HeadlessTaskRecord[]
+  page: { total: number; hasMore: boolean; nextCursor: string | null }
+  summary: { done: number; needsAttention: number }
+  capacity: { running: number; limit: number }
 }
 
 /** One stream's tail from GET /api/headless/:taskId/output. */
@@ -36,24 +65,29 @@ export interface HeadlessOutputStream {
 export interface HeadlessOutput {
   taskId: string
   status: HeadlessTaskStatus
+  structured: HeadlessStructuredOutput
   stdout: HeadlessOutputStream | null
   stderr: HeadlessOutputStream | null
 }
 
 export const headlessApi = {
-  /** List headless runs across all workspaces, newest-first. */
-  async list(
-    opts: { wsId?: string; status?: HeadlessTaskStatus; limit?: number } = {},
-  ): Promise<HeadlessTaskRecord[]> {
+  async snapshot(
+    opts: { wsId?: string; status?: HeadlessTaskStatus; limit?: number; cursor?: string } = {},
+  ): Promise<HeadlessListSnapshot> {
     const q = new URLSearchParams()
     if (opts.wsId) q.set('wsId', opts.wsId)
     if (opts.status) q.set('status', opts.status)
     if (opts.limit) q.set('limit', String(opts.limit))
+    if (opts.cursor) q.set('cursor', opts.cursor)
     const qs = q.toString()
-    const { tasks } = await fetchJson<{ tasks: HeadlessTaskRecord[] }>(
-      `/api/headless${qs ? `?${qs}` : ''}`,
-    )
-    return tasks
+    return fetchJson<HeadlessListSnapshot>(`/api/headless${qs ? `?${qs}` : ''}`)
+  },
+
+  /** List headless runs across all workspaces, newest-first. */
+  async list(
+    opts: { wsId?: string; status?: HeadlessTaskStatus; limit?: number; cursor?: string } = {},
+  ): Promise<HeadlessTaskRecord[]> {
+    return (await this.snapshot(opts)).tasks
   },
 
   /** Tail of a run's on-disk stdout/stderr log (poll while running). */

@@ -93,6 +93,38 @@ describe('HeadlessTaskRegistry', () => {
     expect(reg2.get(a.taskId)?.status).toBe('done')
   })
 
+  it('serializes concurrent registry writes without losing records', async () => {
+    const reg = await HeadlessTaskRegistry.load(path, noopLogger)
+    const created = await Promise.all(
+      Array.from({ length: 24 }, (_, index) => reg.create({
+        wsId: `w${index % 3}`,
+        agent: index % 2 ? 'pi' : 'codex',
+        prompt: `task ${index}`,
+        startedAt: index,
+      })),
+    )
+    await Promise.all(created.map((task, index) => reg.complete(task.taskId, {
+      status: 'done',
+      output: { hasAssistantReply: true, assistantPreview: `reply ${index}`, blockCount: 2, toolCalls: 1, toolFailures: 0 },
+    })))
+    const reloaded = await HeadlessTaskRegistry.load(path, noopLogger)
+    expect(reloaded.list()).toHaveLength(24)
+    expect(reloaded.list().every((task) => task.status === 'done' && task.output?.toolCalls === 1)).toBe(true)
+  })
+
+  it('pages newest-first with a stable task cursor', async () => {
+    const reg = await HeadlessTaskRegistry.load(path, noopLogger)
+    const oldest = await reg.create({ wsId: 'w1', agent: 'claude', prompt: 'oldest', startedAt: 1 })
+    const middle = await reg.create({ wsId: 'w1', agent: 'codex', prompt: 'middle', startedAt: 2 })
+    const newest = await reg.create({ wsId: 'w1', agent: 'pi', prompt: 'newest', startedAt: 3 })
+
+    expect(reg.list({ limit: 2 }).map((task) => task.taskId)).toEqual([newest.taskId, middle.taskId])
+    expect(reg.list({ cursor: middle.taskId, limit: 2 }).map((task) => task.taskId)).toEqual([oldest.taskId])
+    expect(reg.list({ cursor: 'pruned-task', limit: 2 })).toEqual([])
+    expect(reg.count({ wsId: 'w1' })).toBe(3)
+    expect(reg.count({ status: 'running' })).toBe(3)
+  })
+
   it('reconcile-on-boot flips a leftover running task → interrupted', async () => {
     const reg = await HeadlessTaskRegistry.load(path, noopLogger)
     await reg.create({ wsId: 'w1', agent: 'codex', prompt: 'x', startedAt: 1 }) // stays running
@@ -119,6 +151,7 @@ describe('HeadlessTaskRegistry', () => {
     const firstLogs = headlessLogPaths(logsDir, first.taskId)
     await writeFile(firstLogs.stdout, 'old stdout')
     await writeFile(firstLogs.stderr, 'old stderr')
+    await writeFile(firstLogs.structured, '{}')
     // Fill past MAX_RECORDS (200) so `first` (oldest finished) gets pruned.
     for (let i = 0; i < 200; i++) {
       const t = await reg.create({ wsId: 'w1', agent: 'codex', prompt: `t${i}`, startedAt: 2 + i })
@@ -129,5 +162,6 @@ describe('HeadlessTaskRegistry', () => {
     await new Promise((r) => setTimeout(r, 50))
     expect(existsSync(firstLogs.stdout)).toBe(false)
     expect(existsSync(firstLogs.stderr)).toBe(false)
+    expect(existsSync(firstLogs.structured)).toBe(false)
   })
 })

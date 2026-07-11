@@ -21,6 +21,14 @@ import type { Logger } from './logger.js'
 
 export type HeadlessTaskStatus = 'running' | 'done' | 'failed' | 'interrupted'
 
+export interface HeadlessTaskOutputSummary {
+  readonly hasAssistantReply: boolean
+  readonly assistantPreview?: string
+  readonly blockCount: number
+  readonly toolCalls: number
+  readonly toolFailures: number
+}
+
 export interface HeadlessTaskRecord {
   readonly taskId: string
   readonly wsId: string
@@ -51,13 +59,19 @@ export interface HeadlessTaskRecord {
    * announcing (spawn failure) or predate the field.
    */
   agentSessionId?: string
+  /** Compact list-view projection; full normalized blocks stay in the log API. */
+  output?: HeadlessTaskOutputSummary
 }
 
 /** Task-log file paths — shared by the writer (service) and reader (route). */
-export function headlessLogPaths(logsDir: string, taskId: string): { stdout: string; stderr: string } {
+export function headlessLogPaths(
+  logsDir: string,
+  taskId: string,
+): { stdout: string; stderr: string; structured: string } {
   return {
     stdout: join(logsDir, `${taskId}.stdout.log`),
     stderr: join(logsDir, `${taskId}.stderr.log`),
+    structured: join(logsDir, `${taskId}.structured.json`),
   }
 }
 
@@ -65,6 +79,8 @@ const MAX_RECORDS = 200 // prune oldest FINISHED records past this (bounds the f
 
 export class HeadlessTaskRegistry {
   private tasks: HeadlessTaskRecord[] = [] // newest-last in memory
+  /** Mutations may finish concurrently; serialize tmp→rename writes. */
+  private flushChain: Promise<void> = Promise.resolve()
 
   private constructor(
     private readonly path: string,
@@ -136,7 +152,7 @@ export class HeadlessTaskRegistry {
     patch: Partial<
       Pick<
         HeadlessTaskRecord,
-        'status' | 'finishedAt' | 'durationMs' | 'exitCode' | 'signal' | 'killed' | 'error'
+        'status' | 'finishedAt' | 'durationMs' | 'exitCode' | 'signal' | 'killed' | 'error' | 'output'
       >
     >,
   ): Promise<void> {
@@ -160,7 +176,14 @@ export class HeadlessTaskRegistry {
 
   /** Records newest-first, optionally filtered. */
   list(
-    opts: { wsId?: string; issueId?: string; status?: HeadlessTaskStatus; limit?: number } = {},
+    opts: {
+      wsId?: string
+      issueId?: string
+      status?: HeadlessTaskStatus
+      /** Return records older than this task in the filtered newest-first view. */
+      cursor?: string
+      limit?: number
+    } = {},
   ): HeadlessTaskRecord[] {
     let out = this.tasks.filter(
       (t) =>
@@ -169,7 +192,28 @@ export class HeadlessTaskRegistry {
         (!opts.status || t.status === opts.status),
     )
     out = out.slice().reverse() // newest-first
+    if (opts.cursor) {
+      const cursorIndex = out.findIndex((task) => task.taskId === opts.cursor)
+      // A cursor can disappear when the bounded registry prunes old records.
+      // Returning an empty page is safer than silently restarting at page one
+      // and duplicating rows in a polling client.
+      out = cursorIndex === -1 ? [] : out.slice(cursorIndex + 1)
+    }
     return opts.limit && opts.limit > 0 ? out.slice(0, opts.limit) : out
+  }
+
+  /** Count filtered records without materializing them over the HTTP boundary. */
+  count(opts: { wsId?: string; issueId?: string; status?: HeadlessTaskStatus } = {}): number {
+    return this.tasks.reduce(
+      (count, task) => count + (
+        (!opts.wsId || task.wsId === opts.wsId) &&
+        (!opts.issueId || task.issueId === opts.issueId) &&
+        (!opts.status || task.status === opts.status)
+          ? 1
+          : 0
+      ),
+      0,
+    )
   }
 
   runningCount(): number {
@@ -177,6 +221,12 @@ export class HeadlessTaskRegistry {
   }
 
   private async flush(): Promise<void> {
+    const next = this.flushChain.then(() => this.flushNow())
+    this.flushChain = next.catch(() => undefined)
+    await next
+  }
+
+  private async flushNow(): Promise<void> {
     if (this.tasks.length > MAX_RECORDS) {
       // Drop the OLDEST finished records; never drop a `running` one.
       const dropCount = this.tasks.length - MAX_RECORDS
@@ -194,6 +244,7 @@ export class HeadlessTaskRegistry {
             const paths = headlessLogPaths(this.logsDir, taskId)
             void rm(paths.stdout, { force: true }).catch(() => undefined)
             void rm(paths.stderr, { force: true }).catch(() => undefined)
+            void rm(paths.structured, { force: true }).catch(() => undefined)
           }
         }
       }

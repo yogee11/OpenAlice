@@ -26,10 +26,11 @@ import { Skeleton } from '../StateViews'
 import { useWorkspace } from '../../tabs/store'
 import { getFocusedTab } from '../../tabs/types'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { deleteWorkspace, type SessionRecord, type Workspace } from './api'
+import { deleteWorkspace, type Workspace } from './api'
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog'
 import { SessionRow } from './Sidebar'
 import { workspaceDisplayTitle } from './display'
+import { orderSessionsForSidebar, orderWorkspacesForSidebar } from './sidebar-order'
 import { preferencesApi } from '../../api/preferences'
 
 const CHAT_TEMPLATE = 'chat'
@@ -48,16 +49,18 @@ export function ChatWorkspaceSection(): ReactElement | null {
   const focused = useWorkspace((s) => getFocusedTab(s)?.spec)
   const openOrFocus = useWorkspace((s) => s.openOrFocus)
 
-  const chatWorkspaces = useMemo(
-    () => ctx.workspaces.filter((w) => w.template === CHAT_TEMPLATE),
-    [ctx.workspaces],
-  )
-  const showListError = Boolean(ctx.listError && ctx.workspaces.length === 0)
-
   const isWsFocus = focused?.kind === 'workspace' && focused.params.source === 'chat'
   const selection = isWsFocus
     ? { wsId: focused.params.wsId, sessionId: focused.params.sessionId ?? null }
     : null
+  const chatWorkspaces = useMemo(
+    () => orderWorkspacesForSidebar(
+      ctx.workspaces.filter((workspace) => workspace.template === CHAT_TEMPLATE),
+      selection,
+    ),
+    [ctx.workspaces, selection],
+  )
+  const showListError = Boolean(ctx.listError && ctx.workspaces.length === 0)
 
   const chatTemplate = ctx.templates.find((tpl) => tpl.name === CHAT_TEMPLATE)
   const [pendingDelete, setPendingDelete] = useState<Workspace | null>(null)
@@ -170,11 +173,11 @@ export function ChatWorkspaceSection(): ReactElement | null {
             selection={selection}
             onOpen={() => {
               rememberChatWorkspace(w.id)
-              const recent = mostRecentSession(w.sessions)
+              const preferred = orderSessionsForSidebar(w.sessions, null)[0]
               openOrFocus({
                 kind: 'workspace',
-                params: recent
-                  ? { wsId: w.id, sessionId: recent.id, source: 'chat' }
+                params: preferred
+                  ? { wsId: w.id, sessionId: preferred.id, source: 'chat' }
                   : { wsId: w.id, source: 'chat' },
               })
             }}
@@ -208,13 +211,6 @@ export function ChatWorkspaceSection(): ReactElement | null {
   )
 }
 
-function mostRecentSession(sessions: readonly SessionRecord[]): SessionRecord | undefined {
-  if (sessions.length === 0) return undefined
-  return [...sessions].sort(
-    (a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime(),
-  )[0]
-}
-
 interface ChatWorkspaceRowProps {
   workspace: Workspace
   label: string
@@ -238,6 +234,13 @@ function ChatWorkspaceRow(props: ChatWorkspaceRowProps): ReactElement {
   const isSelected = props.selection?.wsId === w.id && props.selection.sessionId === null
   const displayName = w.displayName?.trim()
   const subtitle = displayName && displayName !== props.label ? displayName : null
+  const orderedSessions = useMemo(
+    () => orderSessionsForSidebar(
+      w.sessions,
+      props.selection?.wsId === w.id ? props.selection.sessionId : null,
+    ),
+    [w.sessions, w.id, props.selection],
+  )
 
   const statusClass = hasRunning
     ? 'bg-green'
@@ -335,9 +338,9 @@ function ChatWorkspaceRow(props: ChatWorkspaceRowProps): ReactElement {
           </button>
         </span>
       </div>
-      {expanded && w.sessions.length > 0 && (
+      {expanded && orderedSessions.length > 0 && (
         <div className="ml-[18px] border-l border-border/50">
-          {w.sessions.map((s) => (
+          {orderedSessions.map((s) => (
             <SessionRow
               key={s.id}
               session={s}

@@ -82,6 +82,7 @@ import {
   headlessLogPaths,
   type HeadlessTaskInquiry,
   type HeadlessTaskRecord,
+  type HeadlessTaskTrigger,
 } from './headless-task-registry.js';
 import { ResumeRegistry } from './resume-registry.js';
 import {
@@ -232,10 +233,9 @@ export interface WorkspaceService {
     adapter: CliAdapter,
     prompt: string,
     timeoutMs: number,
-    /** The firing issue's id, when dispatched by the ScheduleScanner; recorded on
-     *  the run as `issueId` so the issue detail's Activity feed can join on it.
-     *  Manual/external runs omit it. */
-    issueId?: string,
+    /** Business source of the dispatch. Its Workspace may differ from `meta`
+     * when an Issue explicitly resumes a signed Session across Workspaces. */
+    trigger?: HeadlessTaskTrigger,
     /** Continue this OpenAlice-owned conversation. Native runtime ids are
      * resolved only inside the service. */
     resumeId?: string,
@@ -901,6 +901,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     // id (recorded WHILE running, so the panel can offer "open as session").
     opts: {
       taskId?: string;
+      resumeId?: string;
       resume?: SessionFactoryContext['resume'];
       onSessionId?: (id: string) => void;
     } = {},
@@ -925,7 +926,13 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       adapter,
       opts.resume,
       undefined,
-      opts.taskId ? { AQ_RUN_ID: opts.taskId } : undefined,
+      opts.taskId ? {
+        AQ_RUN_ID: opts.taskId,
+        ...(opts.resumeId ? {
+          OPENALICE_RESUME_ID: opts.resumeId,
+          OPENALICE_SIGNATURE: `@${opts.resumeId}`,
+        } : {}),
+      } : undefined,
     );
     const command = adapter.composeHeadlessCommand(
       config.command,
@@ -970,9 +977,9 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     adapter: CliAdapter,
     prompt: string,
     timeoutMs: number,
-    // The firing issue's id, when this dispatch came from the ScheduleScanner.
-    // Manual/external runs (the workspace "run task" route) leave it undefined.
-    issueId?: string,
+    // Composite Issue source when dispatched by ScheduleScanner. Manual and
+    // external runs leave it undefined.
+    trigger?: HeadlessTaskTrigger,
     resumeId?: string,
     inquiry?: HeadlessTaskInquiry,
   ): Promise<{ taskId: string; resumeId: string }> => {
@@ -1031,7 +1038,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         startedAt: Date.now(),
         resumeId: identity.resumeId,
         ...(parentTaskId ? { parentTaskId } : {}),
-        ...(issueId ? { issueId } : {}),
+        ...(trigger ? { trigger } : {}),
         ...(inquiry ? { inquiry } : {}),
       });
       await resumeRegistry.ensure({
@@ -1051,6 +1058,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     // operator confirms via the normalized output / Inbox.
     void runHeadlessTaskMethod(ws, adapter, prompt, timeoutMs, {
       taskId: rec.taskId,
+      resumeId: rec.resumeId,
       ...(nativeResume ? { resume: nativeResume } : {}),
       onSessionId: (id) => {
         void Promise.all([
@@ -1088,16 +1096,19 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         // issue open; failed one-shots stay open so the operator can inspect and
         // decide whether to rerun.
         try {
+          const issueWorkspace = trigger?.kind === 'issue'
+            ? registry.get(trigger.workspaceId)
+            : undefined;
           const issueCompletion = await completeOneShotIssueAfterRun({
-            wsDir: ws.dir,
-            issueId,
+            wsDir: issueWorkspace?.dir ?? ws.dir,
+            issueId: issueWorkspace && trigger?.kind === 'issue' ? trigger.issueId : undefined,
             status,
             exitCode: r.exitCode,
             killed: r.killed,
           });
           if (issueCompletion.updated) {
             launcherLogger.info('issue.oneshot_completed', {
-              wsId: ws.id,
+              wsId: trigger?.kind === 'issue' ? trigger.workspaceId : ws.id,
               issueId: issueCompletion.issueId,
               previousStatus: issueCompletion.previousStatus,
               taskId: rec.taskId,
@@ -1105,7 +1116,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
           } else if (issueCompletion.reason === 'mutation_failed' || issueCompletion.reason === 'issues_unavailable') {
             launcherLogger.warn('issue.oneshot_complete_skipped', {
               wsId: ws.id,
-              issueId,
+              issueId: trigger?.kind === 'issue' ? trigger.issueId : undefined,
               taskId: rec.taskId,
               reason: issueCompletion.reason,
               error: issueCompletion.error,
@@ -1114,7 +1125,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         } catch (err) {
           launcherLogger.warn('issue.oneshot_complete_failed', {
             wsId: ws.id,
-            issueId,
+            issueId: trigger?.kind === 'issue' ? trigger.issueId : undefined,
             taskId: rec.taskId,
             err,
           });
@@ -1143,11 +1154,15 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
   );
   const scheduleScanner = new ScheduleScanner({
     registry,
+    resolveResumeWorkspace: (resumeId) => {
+      const identity = resumeRegistry.get(resumeId);
+      return identity ? registry.get(identity.wsId) : undefined;
+    },
     resolveAdapter: async (ws, agentId, resumeId) => {
       if (resumeId) {
         const identity = resumeRegistry.get(resumeId);
         if (!identity) throw new Error(`unknown resume conversation: ${resumeId}`);
-        if (identity.wsId !== ws.id) throw new Error(`resume conversation belongs to another workspace`);
+        if (identity.wsId !== ws.id) throw new Error(`resume conversation workspace resolution drifted`);
         return resolveAdapter(ws, identity.agent);
       }
       if (agentId) return resolveAdapter(ws, agentId);
@@ -1281,7 +1296,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       markers = { lastFiredAtMs: fired.lastFiredAtMs, nextDueAtMs: fired.nextDueAtMs };
     }
     // Newest-first already (registry.list reverses); filter to this issue's runs.
-    const runs = headlessTasks.list({ wsId: ws.id, issueId: issue.id }).map((task) =>
+    const runs = headlessTasks.list({ issue: { workspaceId: ws.id, issueId: issue.id } }).map((task) =>
       issueRunRecord(task, Boolean(resumeRegistry.get(task.resumeId)?.agentSessionId)),
     );
     // The issue→inbox cross-link: the reports this issue produced (entries this
@@ -1289,8 +1304,8 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     // Joined here in the domain so CLI / MCP get it too, not just the HTTP route.
     let inboxReports: IssueDetail['inboxReports'] = [];
     if (inboxStore) {
-      const { entries } = await inboxStore.read({ workspaceId: ws.id, limit: 1000 });
-      inboxReports = inboxReportsForIssue(entries, issue.id).map((entry) => {
+      const { entries } = await inboxStore.read({ limit: 1000 });
+      inboxReports = inboxReportsForIssue(entries, ws.id, issue.id).map((entry) => {
         let origin = toSafeInboxOrigin(entry.origin);
         if (origin && !origin.resumeId && origin.kind === 'headless' && origin.runId) {
           const resumeId = headlessTasks.get(origin.runId)?.resumeId;
@@ -1384,6 +1399,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
           );
         }
       }
+      const productSession = sessionRegistry.get(wsId, ctx.recordId);
       const { command: composedCommand, env, transcriptDir } = composeSpawnInputs(
         ws,
         adapter,
@@ -1402,6 +1418,10 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         {
           ...terminalThemeEnv(ctx.terminalTheme),
           AQ_SESSION_ID: ctx.recordId,
+          ...(productSession?.resumeId ? {
+            OPENALICE_RESUME_ID: productSession.resumeId,
+            OPENALICE_SIGNATURE: `@${productSession.resumeId}`,
+          } : {}),
         },
       );
 

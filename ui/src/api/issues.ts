@@ -63,7 +63,7 @@ export interface IssueListItem {
   title: string
   status: IssueStatus
   priority: IssuePriority
-  /** "human" | "ws:<tag|id>" | "unassigned"; missing assignee defaults to the owning workspace. */
+  /** @workspace | @human | @unassigned | exact @resumeId Session signature. */
   assignee: string
   /** Adapter id for the scheduled fire override, if set. */
   agent?: string
@@ -149,7 +149,7 @@ export interface IssueDetailIssue {
   what: string
   status: IssueStatus
   priority: IssuePriority
-  /** "human" | "ws:<tag|id>" | "unassigned"; missing assignee defaults to the owning workspace. */
+  /** @workspace | @human | @unassigned | exact @resumeId Session signature. */
   assignee: string
   /** Present iff the issue self-schedules. */
   when?: ScheduleWhen

@@ -88,7 +88,7 @@ as `--when`:
 ```bash
 alice-workspace issue create --title "Pre-market brief" --priority high \
   --when '{"kind":"cron","cron":"30 8 * * 1-5"}' \
-  --assignee session:self \
+  --assignee @me \
   --what "Pull pre-market movers and overnight news for my watchlist, write a short brief to research/premarket.md, then run: alice-workspace inbox push --doc research/premarket.md --comments 'Pre-market brief'." \
   --agent claude
 ```
@@ -109,7 +109,7 @@ on-disk file shape the CLI and your direct edits both produce.
 title: Pre-market brief
 status: todo
 priority: high
-assignee: session:resume-calm-amber-river-a1b2c3
+assignee: "@resume-calm-amber-river-a1b2c3"
 when: { kind: cron, cron: "30 8 * * 1-5" }
 ---
 
@@ -153,13 +153,15 @@ plain tracked item; add a `when` and it starts firing.
   (There is no `enabled` field — terminal status is how you pause a timer.)
 - **`priority`** *(optional, default `none`)* — `urgent`, `high`, `medium`,
   `low`, `none`. Display/sort only.
-- **`assignee`** *(optional, default `workspace`)* — the single owner and
+- **`assignee`** *(optional)* — the single owner and
   scheduled-dispatch policy:
-  - `workspace` recruits a new product Session for each scheduled fire;
-  - `session:<resumeId>` continues that exact accountable Session;
-  - `human` and `unassigned` are valid only for unscheduled work.
-  The CLI convenience value `session:self` resolves to the caller's concrete
-  `session:<resumeId>` before writing the file.
+  - `@workspace` recruits a new product Session for each scheduled fire;
+  - an exact `@resumeId` continues that accountable Session, even when its
+    signed Workspace differs from the Issue's Workspace;
+  - `@human` and `@unassigned` are valid only for unscheduled work.
+  CLI `issue create` defaults to `@me` when called by an attributable Session
+  (who creates it owns it); `@me` is resolved to a concrete `@resumeId` before
+  writing. Use `@workspace` explicitly when every fire should recruit a newcomer.
 - **`when`** *(OPTIONAL — present iff the issue self-schedules)* — one of:
   - `{ kind: every, every: "30m" }` — repeat on an interval (`30m`, `2h`,
     `1h30m`). Runs on the next scan, then on the interval.

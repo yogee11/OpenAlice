@@ -29,6 +29,7 @@ import { computeNextRun, type Schedule } from '../../core/schedule-expr.js'
 import type { CliAdapter } from '../cli-adapter.js'
 import type { Logger } from '../logger.js'
 import type { WorkspaceMeta, WorkspaceRegistry } from '../workspace-registry.js'
+import type { HeadlessTaskTrigger } from '../headless-task-registry.js'
 
 import { isFireable, issueAssigneeResumeId, issueFirePrompt, readWorkspaceIssues } from '../issues/declaration.js'
 
@@ -54,16 +55,16 @@ export interface MarkerStore {
 
 export interface ScheduleScannerDeps {
   registry: WorkspaceRegistry
+  /** Resolve the execution Workspace for an exact signed Session owner. */
+  resolveResumeWorkspace?: (resumeId: string) => WorkspaceMeta | undefined
   resolveAdapter: (meta: WorkspaceMeta, agentId?: string, resumeId?: string) => CliAdapter | Promise<CliAdapter>
   dispatch: (
     meta: WorkspaceMeta,
     adapter: CliAdapter,
     prompt: string,
     timeoutMs: number,
-    /** The firing issue's id — recorded on the run so the issue detail can show
-     *  its real run history. The scanner ALWAYS passes it (it only fires from an
-     *  issue); manual/external dispatch callers omit it. */
-    issueId?: string,
+    /** Composite source of the dispatch. Execution may happen elsewhere. */
+    trigger?: HeadlessTaskTrigger,
     /** Product Session to continue. Omitted means allocate a fresh Session. */
     resumeId?: string,
   ) => Promise<{ taskId: string }>
@@ -211,7 +212,7 @@ export class ScheduleScanner {
   }
 
   private async fire(
-    ws: WorkspaceMeta,
+    issueWorkspace: WorkspaceMeta,
     taskId: string,
     what: string,
     agentId: string | undefined,
@@ -219,19 +220,32 @@ export class ScheduleScanner {
     nowMs: number,
   ): Promise<void> {
     try {
-      const adapter = await this.deps.resolveAdapter(ws, agentId, resumeId)
-      if (!adapter.capabilities.headless || !adapter.composeHeadlessCommand) {
-        this.deps.logger.warn('schedule.adapter_not_headless', { wsId: ws.id, taskId, agent: adapter.id })
+      const executionWorkspace = resumeId
+        ? this.resolveResumeWorkspace(resumeId)
+        : issueWorkspace
+      if (!executionWorkspace) {
+        this.deps.logger.warn('schedule.resume_workspace_missing', {
+          wsId: issueWorkspace.id, taskId, resumeId,
+        })
         return
       }
-      // `taskId` here is the firing ISSUE's id (keyed by filename stem) — thread
-      // it so the run records which issue triggered it.
+      const adapter = await this.deps.resolveAdapter(executionWorkspace, agentId, resumeId)
+      if (!adapter.capabilities.headless || !adapter.composeHeadlessCommand) {
+        this.deps.logger.warn('schedule.adapter_not_headless', { wsId: executionWorkspace.id, taskId, agent: adapter.id })
+        return
+      }
+      const trigger: HeadlessTaskTrigger = {
+        kind: 'issue',
+        workspaceId: issueWorkspace.id,
+        issueId: taskId,
+      }
       const { taskId: runId } = resumeId
-        ? await this.deps.dispatch(ws, adapter, what, RUN_TIMEOUT_MS, taskId, resumeId)
-        : await this.deps.dispatch(ws, adapter, what, RUN_TIMEOUT_MS, taskId)
-      await this.deps.markers.set(ws.id, taskId, nowMs)
+        ? await this.deps.dispatch(executionWorkspace, adapter, what, RUN_TIMEOUT_MS, trigger, resumeId)
+        : await this.deps.dispatch(executionWorkspace, adapter, what, RUN_TIMEOUT_MS, trigger)
+      await this.deps.markers.set(issueWorkspace.id, taskId, nowMs)
       this.deps.logger.info('schedule.fired', {
-        wsId: ws.id,
+        wsId: issueWorkspace.id,
+        executionWsId: executionWorkspace.id,
         taskId,
         agent: adapter.id,
         runId,
@@ -242,10 +256,14 @@ export class ScheduleScanner {
       // Capacity full (or transient) - do NOT mark; the task stays due and
       // retries on the next tick once a headless slot frees.
       this.deps.logger.info('schedule.fire_skipped', {
-        wsId: ws.id,
+        wsId: issueWorkspace.id,
         taskId,
         reason: err instanceof Error ? err.message : String(err),
       })
     }
+  }
+
+  private resolveResumeWorkspace(resumeId: string): WorkspaceMeta | undefined {
+    return this.deps.resolveResumeWorkspace?.(resumeId)
   }
 }

@@ -40,7 +40,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Morning movers scan',
           status: 'in_progress',
           priority: 'high',
-          assignee: 'workspace',
+          assignee: '@workspace',
           agent: 'codex',
           when: { kind: 'cron', cron: '30 8 * * 1-5' },
           lastFiredAtMs: now - HOUR,
@@ -52,7 +52,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Thesis invalidation watch',
           status: 'todo',
           priority: 'urgent',
-          assignee: 'session:demo-resume-thesis-owner',
+          assignee: '@resume-demo-thesis-owner',
           when: { kind: 'every', every: '1h' },
           lastFiredAtMs: now - HOUR / 2,
           nextDueAtMs: now + HOUR / 2,
@@ -63,7 +63,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Rebalance sizing logic needs a human review',
           status: 'todo',
           priority: 'medium',
-          assignee: 'human',
+          assignee: '@human',
         },
         // Backlog, unassigned, unscheduled.
         {
@@ -71,7 +71,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Prune stale signal cache entries',
           status: 'backlog',
           priority: 'low',
-          assignee: 'unassigned',
+          assignee: '@unassigned',
         },
         // Cross-workspace name collision (also declared in demo-ws-macro under
         // the same title). nameCollision flags the board warning; the two share a
@@ -81,7 +81,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Liquidity risk review',
           status: 'todo',
           priority: 'high',
-          assignee: 'workspace',
+          assignee: '@workspace',
           nameCollision: true,
         },
       ],
@@ -97,7 +97,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Weekly macro digest',
           status: 'in_progress',
           priority: 'medium',
-          assignee: 'workspace',
+          assignee: '@workspace',
           agent: 'codex',
           when: { kind: 'cron', cron: '0 16 * * 5' },
           lastFiredAtMs: now - 2 * DAY,
@@ -109,7 +109,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Write the CPI release reaction note',
           status: 'todo',
           priority: 'high',
-          assignee: 'human',
+          assignee: '@human',
           agent: 'claude',
           when: { kind: 'at', at: new Date(now + 3 * DAY).toISOString() },
           lastFiredAtMs: null,
@@ -121,7 +121,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Summarize the upcoming Fed speaker calendar',
           status: 'done',
           priority: 'none',
-          assignee: 'human',
+          assignee: '@human',
         },
         // Canceled work item.
         {
@@ -129,7 +129,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Cross-asset correlation study',
           status: 'canceled',
           priority: 'low',
-          assignee: 'unassigned',
+          assignee: '@unassigned',
         },
         // Cross-workspace name collision (the other half of the auto-quant
         // "Liquidity risk review"). Same title, different wsId / status / owner.
@@ -138,7 +138,7 @@ export const demoIssuesSnapshot: IssueSnapshot = {
           title: 'Liquidity risk review',
           status: 'backlog',
           priority: 'medium',
-          assignee: 'human',
+          assignee: '@human',
           nameCollision: true,
         },
       ],

@@ -73,16 +73,16 @@ describe('HeadlessTaskRegistry', () => {
     expect(reg.list({ limit: 1 }).length).toBe(1)
   })
 
-  it('records issueId when an issue fired the run; omits it for manual runs', async () => {
+  it('records a composite Issue trigger when an issue fired the run', async () => {
     const reg = await HeadlessTaskRegistry.load(path, noopLogger)
-    const fired = await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'x', startedAt: 1, issueId: 'daily-scan' })
+    const fired = await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'x', startedAt: 1, trigger: { kind: 'issue', workspaceId: 'home', issueId: 'daily-scan' } })
     const manual = await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'y', startedAt: 2 })
-    expect(fired.issueId).toBe('daily-scan')
+    expect(fired.trigger).toEqual({ kind: 'issue', workspaceId: 'home', issueId: 'daily-scan' })
     // Manual runs leave the field absent (not undefined-valued) so the JSON stays clean.
-    expect('issueId' in manual).toBe(false)
+    expect('trigger' in manual).toBe(false)
     // Persists across reload.
     const reg2 = await HeadlessTaskRegistry.load(path, noopLogger)
-    expect(reg2.get(fired.taskId)?.issueId).toBe('daily-scan')
+    expect(reg2.get(fired.taskId)?.trigger?.issueId).toBe('daily-scan')
   })
 
   it('persists and reverse-filters business inquiry subjects', async () => {
@@ -122,12 +122,12 @@ describe('HeadlessTaskRegistry', () => {
 
   it('list filters by issueId (the issue detail Activity feed join)', async () => {
     const reg = await HeadlessTaskRegistry.load(path, noopLogger)
-    const a = await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'x', startedAt: 1, issueId: 'iss-a' })
-    const b = await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'y', startedAt: 2, issueId: 'iss-a' })
-    await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'z', startedAt: 3, issueId: 'iss-b' })
+    const a = await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'x', startedAt: 1, trigger: { kind: 'issue', workspaceId: 'home', issueId: 'iss-a' } })
+    const b = await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'y', startedAt: 2, trigger: { kind: 'issue', workspaceId: 'home', issueId: 'iss-a' } })
+    await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'z', startedAt: 3, trigger: { kind: 'issue', workspaceId: 'home', issueId: 'iss-b' } })
     await createTask(reg, { wsId: 'w1', agent: 'codex', prompt: 'm', startedAt: 4 }) // manual, no issueId
     // newest-first, only iss-a's runs.
-    expect(reg.list({ wsId: 'w1', issueId: 'iss-a' }).map((t) => t.taskId)).toEqual([b.taskId, a.taskId])
+    expect(reg.list({ issue: { workspaceId: 'home', issueId: 'iss-a' } }).map((t) => t.taskId)).toEqual([b.taskId, a.taskId])
   })
 
   it('stores the full task prompt (not truncated — collapsible in the UI)', async () => {

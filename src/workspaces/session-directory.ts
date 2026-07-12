@@ -61,7 +61,7 @@ export function buildWorkspaceSessionDirectory(input: {
                 startedAt: execution.startedAt,
                 ...(execution.finishedAt !== undefined ? { finishedAt: execution.finishedAt } : {}),
                 ...(execution.durationMs !== undefined ? { durationMs: execution.durationMs } : {}),
-                ...(execution.issueId ? { issueId: execution.issueId } : {}),
+                ...(execution.trigger?.kind === 'issue' ? { issueId: execution.trigger.issueId } : {}),
                 ...(execution.output?.assistantPreview
                   ? { assistantPreview: execution.output.assistantPreview }
                   : {}),

@@ -34,7 +34,7 @@ describe('createIssue', () => {
       // Defaults applied on read-back.
       expect(res.issue.status).toBe('todo')
       expect(res.issue.priority).toBe('none')
-      expect(res.issue.assignee).toBe('workspace')
+      expect(res.issue.assignee).toBe('@workspace')
     }
     const { issue } = await readBack('fix-the-login-bug')
     expect(issue?.title).toBe('Fix the Login Bug!')
@@ -46,7 +46,7 @@ describe('createIssue', () => {
       title: 'Morning research sweep',
       status: 'in_progress',
       priority: 'high',
-      assignee: 'session:resume-kind-owl-abc123',
+      assignee: '@resume-kind-owl-abc123',
       when: { kind: 'every', every: '30m' },
       what: 'run the research routine',
     })
@@ -57,7 +57,7 @@ describe('createIssue', () => {
       title: 'Morning research sweep',
       status: 'in_progress',
       priority: 'high',
-      assignee: 'session:resume-kind-owl-abc123',
+      assignee: '@resume-kind-owl-abc123',
       what: 'run the research routine',
     })
     expect(issue?.when).toEqual({ kind: 'every', every: '30m' })
@@ -99,21 +99,21 @@ describe('updateIssueFields', () => {
     const res = await updateIssueFields(dir, 'task-1', {
       status: 'in_progress',
       priority: 'urgent',
-      assignee: 'workspace',
+      assignee: '@workspace',
       agent: 'pi',
     })
     expect(res.ok).toBe(true)
     if (res.ok) {
       expect(res.issue.status).toBe('in_progress')
       expect(res.issue.priority).toBe('urgent')
-      expect(res.issue.assignee).toBe('workspace')
+      expect(res.issue.assignee).toBe('@workspace')
       expect(res.issue.agent).toBe('pi')
     }
     const { issue } = await readBack('task-1')
     expect(issue).toMatchObject({
       status: 'in_progress',
       priority: 'urgent',
-      assignee: 'workspace',
+      assignee: '@workspace',
       what: 'keep the fire prompt',
       agent: 'pi',
     })
@@ -134,15 +134,15 @@ describe('updateIssueFields', () => {
       id: 'owned',
       title: 'Owned',
       when: { kind: 'every', every: '15m' },
-      assignee: 'workspace',
+      assignee: '@workspace',
       agent: 'codex',
     })
     const res = await updateIssueFields(dir, 'owned', {
-      assignee: 'session:resume-kind-owl-abc123',
+      assignee: '@resume-kind-owl-abc123',
     })
     expect(res.ok).toBe(true)
     const { issue } = await readBack('owned')
-    expect(issue?.assignee).toBe('session:resume-kind-owl-abc123')
+    expect(issue?.assignee).toBe('@resume-kind-owl-abc123')
     expect(issue?.agent).toBeUndefined()
     expect(issue?.when).toEqual({ kind: 'every', every: '15m' })
   })
@@ -213,7 +213,7 @@ describe('appendIssueComment', () => {
 describe('round-trip: create → update → comment → read back', () => {
   it('keeps work definition and comments independently readable', async () => {
     await createIssue(dir, { id: 'rt', title: 'Round trip', what: 'desc' })
-    await updateIssueFields(dir, 'rt', { status: 'in_progress', assignee: 'human' })
+    await updateIssueFields(dir, 'rt', { status: 'in_progress', assignee: '@human' })
     await appendIssueComment(dir, 'rt', 'human', 'looks good')
     const { issue, invalid } = await readBack('rt')
     expect(invalid).toHaveLength(0)
@@ -221,7 +221,7 @@ describe('round-trip: create → update → comment → read back', () => {
       id: 'rt',
       title: 'Round trip',
       status: 'in_progress',
-      assignee: 'human',
+      assignee: '@human',
     })
     expect(issue?.what).toBe('desc')
     const comments = await readIssueComments(dir, 'rt')

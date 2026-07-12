@@ -187,6 +187,9 @@ export const CLI_EXPORTS: Record<string, CliExport> = {
       provenance: {
         show: 'provenance_show',
       },
+      signature: {
+        show: 'session_signature',
+      },
       conversation: {
         ask: 'conversation_ask',
         await: 'conversation_await',

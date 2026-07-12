@@ -5,6 +5,27 @@ Sessions and everything they create: reports, Inbox notifications, Issues, and
 trade decisions. It is the design spine for features such as “ask the sender,”
 “ask the Issue owner,” and “why did this agent initiate this trade?”
 
+## Session signature
+
+`resumeId` is OpenAlice's unique Session identity; `@resumeId` is its visible
+signature. Every live interactive/headless Agent receives
+`OPENALICE_RESUME_ID` and `OPENALICE_SIGNATURE`, while
+`alice-workspace signature show` resolves the same identity through the
+authoritative request origin. Environment values help the Agent remember its
+name; server-side origin resolution remains the authority for structured
+Inbox, Issue, and trade actions.
+
+Standalone Markdown stays self-contained and should end with:
+
+```md
+---
+
+Signed-by: @resume-calm-amber-river-a1b2c3
+```
+
+The UI renders that signature as a link back to the exact product Session.
+Reports do not need a parallel metadata sidecar merely to carry authorship.
+
 Related guides: [[docs/project-structure.md]] and
 [[docs/workspace-issues-and-scheduling.md]]. This is a provenance/indexing
 contract, not a revival of the retired event-bus scheduler described in
@@ -257,11 +278,12 @@ instead of creating another parallel timeline.
 #### Mode A: one responsible Session
 
 ```yaml
-assignee: session:resume-calm-amber-river-a1b2c3
+assignee: "@resume-calm-amber-river-a1b2c3"
 ```
 
 - Every scheduled fire continues that exact `resumeId`.
-- The responsible Session must belong to the Issue's owning Workspace.
+- The responsible Session may be in another Workspace when the exact signature
+  was deliberately carried in from a signed artifact.
 - The Session's bound runtime is authoritative; the Issue's top-level `agent`
   cannot override it.
 - Run `taskId`s change; the product Session does not.
@@ -269,15 +291,15 @@ assignee: session:resume-calm-amber-river-a1b2c3
 - If the Session becomes unresumable, the Issue becomes blocked/unavailable;
   it must not silently recruit a replacement and pretend continuity.
 
-For agent-facing `issue_create`, `assignee: session:self` binds the caller's
+For agent-facing `issue_create`, omitted assignee or `@me` binds the caller's
 authoritative product Session; OpenAlice resolves and persists the concrete
-`session:<resumeId>` value server-side. A human UI may select an existing
-resumable Workspace Session.
+`@resumeId` server-side. `@me` is never stored. A human UI may select an
+existing resumable Workspace Session.
 
 #### Mode B: a fresh worker per fire
 
 ```yaml
-assignee: workspace
+assignee: "@workspace"
 ```
 
 - Every scheduled fire creates a new headless product Session and `resumeId`.
@@ -300,7 +322,7 @@ Typical questions then resolve without ambiguity:
 |---|---|
 | Why does this Issue exist? | Issue `created` provenance |
 | Why was its priority changed? | Matching `updated` provenance |
-| Ask the responsible owner | Declared `session:<resumeId>` assignee |
+| Ask the responsible owner | Declared `@resumeId` assignee |
 | Why did yesterday's report say this? | That run's `resumeId` |
 | What does the latest Workspace worker think? | Explicit latest-run selection |
 
@@ -361,7 +383,7 @@ the scan?”, “who wrote the 10 July report?”, and “who ran it most recent
 three different provenance queries.
 
 If the user instead wants one analyst to accumulate memory across days, the
-Issue must declare `assignee: session:<resumeId>` and keep one responsible
+Issue must declare `assignee: "@resumeId"` and keep one responsible
 product Session.
 
 ### Legacy Inbox with no sender Session
@@ -390,8 +412,8 @@ approval state, routing, fills, and slippage.
 9. Mutable artifacts retain occurrence-level provenance instead of one mutable
    “author” field.
 10. Issue creation provenance and future execution responsibility are separate.
-11. Issue assignee is the only ownership/dispatch contract: `workspace` or an
-    exact `session:<resumeId>` for scheduled work.
+11. Issue assignee is the only ownership/dispatch contract: `@workspace` or an
+    exact `@resumeId` for scheduled work.
 12. Trade decision attribution and trade execution authority remain separate.
 13. Provenance is stamped from authoritative context, not asserted by an agent.
 14. Existing UUID `resumeId`s remain valid; readable ids apply only to new

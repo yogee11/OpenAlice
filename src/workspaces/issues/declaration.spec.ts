@@ -69,7 +69,7 @@ describe('readWorkspaceIssues', () => {
         title: 'Fix the login bug',
         status: 'todo',
         priority: 'none',
-        assignee: 'workspace',
+        assignee: '@workspace',
       })
       expect(i.when).toBeUndefined()
       expect(isFireable(i)).toBe(false)
@@ -77,11 +77,11 @@ describe('readWorkspaceIssues', () => {
   })
 
   it('preserves an explicit unassigned owner for an unscheduled issue', async () => {
-    await writeIssue('explicit', fm('title: Explicit\nassignee: unassigned'))
+    await writeIssue('explicit', fm('title: Explicit\nassignee: "@unassigned"'))
     const r = await readWorkspaceIssues(dir)
     expect(r.ok).toBe(true)
     if (r.ok) {
-      expect(r.issues[0].assignee).toBe('unassigned')
+      expect(r.issues[0].assignee).toBe('@unassigned')
     }
   })
 
@@ -93,7 +93,7 @@ describe('readWorkspaceIssues', () => {
           'title: Morning research sweep',
           'status: in_progress',
           'priority: high',
-          'assignee: workspace',
+          'assignee: "@workspace"',
           'when: { kind: every, every: 30m }',
           'what: run the research routine',
           'agent: codex',
@@ -111,7 +111,7 @@ describe('readWorkspaceIssues', () => {
         title: 'Morning research sweep',
         status: 'in_progress',
         priority: 'high',
-        assignee: 'workspace',
+        assignee: '@workspace',
         what: 'run the research routine\n\n## Context\n\nScan overnight movers and summarize.',
         agent: 'codex',
       })
@@ -125,7 +125,7 @@ describe('readWorkspaceIssues', () => {
     await writeIssue('owned', fm([
       'title: Owned work',
       'when: { kind: every, every: 30m }',
-      'assignee: session:resume-kind-owl-abc123',
+      'assignee: "@resume-kind-owl-abc123"',
     ].join('\n')))
     await writeIssue('legacy', fm('title: Legacy\nwhen: { kind: every, every: 30m }'))
     const result = await readWorkspaceIssues(dir)
@@ -133,7 +133,7 @@ describe('readWorkspaceIssues', () => {
     if (!result.ok) return
     const byId = Object.fromEntries(result.issues.map((issue) => [issue.id, issue]))
     expect(issueAssigneeResumeId(byId['owned'].assignee)).toBe('resume-kind-owl-abc123')
-    expect(byId['legacy'].assignee).toBe('workspace')
+    expect(byId['legacy'].assignee).toBe('@workspace')
   })
 
   it('rejects retired execution declarations instead of silently keeping two owner models', async () => {

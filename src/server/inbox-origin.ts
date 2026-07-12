@@ -36,7 +36,7 @@ import type { InboxOrigin } from '../core/inbox-store.js'
 interface HeadlessRecordLike {
   readonly taskId: string
   readonly resumeId: string
-  readonly issueId?: string
+  readonly trigger?: { readonly kind: 'issue'; readonly workspaceId: string; readonly issueId: string }
   readonly agent: string
 }
 interface SessionRecordLike {
@@ -84,7 +84,10 @@ export function resolveInboxOrigin(
         kind: 'headless',
         runId: rec.taskId,
         resumeId: rec.resumeId,
-        ...(rec.issueId ? { issueId: rec.issueId } : {}),
+        ...(rec.trigger?.kind === 'issue' ? {
+          issueId: rec.trigger.issueId,
+          issueWorkspaceId: rec.trigger.workspaceId,
+        } : {}),
         ...(rec.agent ? { agent: rec.agent } : {}),
       }
     }

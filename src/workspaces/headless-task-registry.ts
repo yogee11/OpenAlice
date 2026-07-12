@@ -35,6 +35,15 @@ export interface HeadlessTaskOutputSummary {
   readonly toolFailures: number
 }
 
+/** The business object that caused an execution. This is intentionally
+ * independent from `wsId`: an exact signed Session may execute in Workspace B
+ * while answering a scheduled Issue whose source of truth remains Workspace A. */
+export type HeadlessTaskTrigger = {
+  readonly kind: 'issue'
+  readonly workspaceId: string
+  readonly issueId: string
+}
+
 /** Business object that requested a headless follow-up. Product provenance
  * only: adapter-native session ids never cross into this record. */
 export type HeadlessInquirySubject =
@@ -80,7 +89,7 @@ export interface HeadlessTaskRecord {
    * "run task" route) and on runs that predate the field — those have no owning
    * issue. This is the run↔issue link the issue detail's Activity feed joins on.
    */
-  readonly issueId?: string
+  readonly trigger?: HeadlessTaskTrigger
   /** Durable reverse link for Inbox/Issue follow-up UI. */
   readonly inquiry?: HeadlessTaskInquiry
   readonly agent: string
@@ -171,8 +180,8 @@ export class HeadlessTaskRegistry {
     resumeId: string
     /** Previous execution in the same resume chain, when continuing. */
     parentTaskId?: string
-    /** Set only when an issue fired this run (scheduled scan); omitted for manual/external runs. */
-    issueId?: string
+    /** Set only when an Issue fired this run; omitted for manual/external runs. */
+    trigger?: HeadlessTaskTrigger
     /** Business follow-up metadata; omitted for automation/manual runs. */
     inquiry?: HeadlessTaskInquiry
   }): Promise<HeadlessTaskRecord> {
@@ -188,7 +197,7 @@ export class HeadlessTaskRegistry {
       status: 'running',
       startedAt: input.startedAt,
       // Keep the field absent (not `undefined`) on manual runs so the JSON stays clean.
-      ...(input.issueId ? { issueId: input.issueId } : {}),
+      ...(input.trigger ? { trigger: input.trigger } : {}),
       ...(input.inquiry ? { inquiry: input.inquiry } : {}),
     }
     this.tasks.push(rec)
@@ -236,7 +245,7 @@ export class HeadlessTaskRegistry {
   list(
     opts: {
       wsId?: string
-      issueId?: string
+      issue?: { workspaceId: string; issueId: string }
       status?: HeadlessTaskStatus
       inquiry?: HeadlessInquiryScope
       /** Return records older than this task in the filtered newest-first view. */
@@ -247,7 +256,11 @@ export class HeadlessTaskRegistry {
     let out = this.tasks.filter(
       (t) =>
         (!opts.wsId || t.wsId === opts.wsId) &&
-        (!opts.issueId || t.issueId === opts.issueId) &&
+        (!opts.issue || (
+          t.trigger?.kind === 'issue' &&
+          t.trigger.workspaceId === opts.issue.workspaceId &&
+          t.trigger.issueId === opts.issue.issueId
+        )) &&
         (!opts.inquiry || inquirySubjectMatches(t.inquiry?.subject, opts.inquiry)) &&
         (!opts.status || t.status === opts.status),
     )
@@ -262,11 +275,15 @@ export class HeadlessTaskRegistry {
   }
 
   /** Count filtered records without materializing them over the HTTP boundary. */
-  count(opts: { wsId?: string; issueId?: string; status?: HeadlessTaskStatus; inquiry?: HeadlessInquiryScope } = {}): number {
+  count(opts: { wsId?: string; issue?: { workspaceId: string; issueId: string }; status?: HeadlessTaskStatus; inquiry?: HeadlessInquiryScope } = {}): number {
     return this.tasks.reduce(
       (count, task) => count + (
         (!opts.wsId || task.wsId === opts.wsId) &&
-        (!opts.issueId || task.issueId === opts.issueId) &&
+        (!opts.issue || (
+          task.trigger?.kind === 'issue' &&
+          task.trigger.workspaceId === opts.issue.workspaceId &&
+          task.trigger.issueId === opts.issue.issueId
+        )) &&
         (!opts.inquiry || inquirySubjectMatches(task.inquiry?.subject, opts.inquiry)) &&
         (!opts.status || task.status === opts.status)
           ? 1
@@ -290,7 +307,7 @@ export class HeadlessTaskRegistry {
     try {
       await mkdir(dirname(this.path), { recursive: true })
       const tmp = `${this.path}.tmp`
-      await writeFile(tmp, JSON.stringify({ version: 2, tasks: this.tasks }, null, 2), 'utf8')
+      await writeFile(tmp, JSON.stringify({ version: 3, tasks: this.tasks }, null, 2), 'utf8')
       await rename(tmp, this.path)
     } catch (err) {
       this.logger.warn('headless_registry.flush_failed', { err })

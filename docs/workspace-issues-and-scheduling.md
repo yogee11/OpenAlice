@@ -33,7 +33,7 @@ workspaces.
 title: Pre-market brief
 status: todo
 priority: high
-assignee: workspace
+assignee: "@workspace"
 when: { kind: cron, cron: "30 8 * * 1-5" }
 agent: pi
 ---
@@ -48,21 +48,23 @@ The filename stem is the stable issue id. Frontmatter:
 - `status` — `backlog | todo | in_progress | done | canceled`; default `todo`.
 - `priority` — `urgent | high | medium | low | none`; default `none`.
 - `assignee` — the single ownership and dispatch contract:
-  - `workspace` means the owning Workspace recruits a new product Session for
+  - `@workspace` means the owning Workspace recruits a new product Session for
     every scheduled fire;
-  - `session:<resumeId>` continues one exact accountable product Session;
-  - `human` or `unassigned` is valid only for unscheduled work.
+  - an exact `@resumeId` continues one accountable product Session;
+  - `@human` or `@unassigned` is valid only for unscheduled work.
 - `when` — optional schedule:
   - `{ kind: at, at: <ISO timestamp> }`
   - `{ kind: every, every: <duration> }`
   - `{ kind: cron, cron: <5-field expression> }`
-- `agent` — optional CLI adapter id for `workspace`-owned scheduled work;
+- `agent` — optional CLI adapter id for `@workspace`-owned scheduled work;
   otherwise Workspace/default resolution is used. A Session assignee already
   owns its runtime and cannot be overridden here.
 
 Migration `0018_issue_assignee_ownership` removes the retired parallel
-`execution` field. It maps `resume` to `session:<resumeId>` and fresh/omitted
-scheduled ownership to `workspace`; the reader only accepts the new contract.
+`execution` field. It maps `resume` to the former `session:<resumeId>` shape and
+fresh/omitted scheduled ownership to the former `workspace` shape.
+Migration `0019_issue_session_signatures` then writes those owners as
+`@resumeId` / `@workspace`, the same visible signature language used in reports.
 
 The markdown below frontmatter is the Issue's canonical **What**: the work
 definition humans inspect and edit. For scheduled Issues, Alice sends this exact
@@ -212,8 +214,8 @@ use a later collect or one-shot read; agents should not manufacture shell sleep
 loops.
 
 The Issue detail UI treats scheduling as an intrinsic Work item capability.
-`assignee: workspace` recruits a new Session on every fire;
-`assignee: session:<resumeId>` keeps one responsible Session. Only the latter
+`assignee: "@workspace"` recruits a new Session on every fire;
+`assignee: "@resumeId"` keeps one responsible Session. Only the latter
 has a stable owner to ask; Workspace-owned execution exposes the creator and
 each concrete run as separate follow-up targets.
 

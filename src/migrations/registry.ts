@@ -14,7 +14,7 @@
  * deletion + Workspace pivot turned the pre-0.40 data shapes over completely, so
  * pre-0.40 installs rebuild `data/` rather than migrate. The framework stays for
  * future upgrades. Numbering continues FORWARD from the highest id ever shipped
- * (next: 0018) — never reuse a retired id, since existing installs' journals
+ * (next: 0021) — never reuse a retired id, since existing installs' journals
  * recorded the old ones.
  */
 
@@ -30,6 +30,8 @@ import { migration as migration_0015_resume_identity_registry } from './0015_res
 import { migration as migration_0016_artifact_provenance_store } from './0016_artifact_provenance_store/index.js'
 import { migration as migration_0017_issue_what_and_comment_sidecars } from './0017_issue_what_and_comment_sidecars/index.js'
 import { migration as migration_0018_issue_assignee_ownership } from './0018_issue_assignee_ownership/index.js'
+import { migration as migration_0019_issue_session_signatures } from './0019_issue_session_signatures/index.js'
+import { migration as migration_0020_headless_issue_trigger } from './0020_headless_issue_trigger/index.js'
 
 export const REGISTRY: Migration[] = [
   migration_0008_disable_targetless_cron_jobs,
@@ -43,4 +45,6 @@ export const REGISTRY: Migration[] = [
   migration_0016_artifact_provenance_store,
   migration_0017_issue_what_and_comment_sidecars,
   migration_0018_issue_assignee_ownership,
+  migration_0019_issue_session_signatures,
+  migration_0020_headless_issue_trigger,
 ]

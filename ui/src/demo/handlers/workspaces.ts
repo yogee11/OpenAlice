@@ -167,13 +167,30 @@ export const workspacesHandlers = [
       title: null,
     }),
   ),
+  http.get('/api/workspaces/signatures/:resumeId', ({ params }) => {
+    const resumeId = String(params.resumeId)
+    const workspace = demoWorkspaces.find((candidate) =>
+      candidate.sessions.some((session) => session.resumeId === resumeId),
+    ) ?? (resumeId === 'resume-demo-thesis-owner'
+      ? demoWorkspaces.find((candidate) => candidate.id === 'demo-ws-auto-quant')
+      : undefined)
+    if (!workspace) return HttpResponse.json({ error: 'not_found' }, { status: 404 })
+    const session = workspace.sessions.find((candidate) => candidate.resumeId === resumeId)
+    return HttpResponse.json({
+      signature: `@${resumeId}`,
+      resumeId,
+      workspaceId: workspace.id,
+      agent: session?.agent ?? 'claude',
+      resumable: true,
+    })
+  }),
   http.get('/api/workspaces/:id/resumes', ({ params }) => {
     const wsId = String(params.id)
     if (wsId === 'demo-ws-auto-quant') {
       return HttpResponse.json({
         workspace: { id: wsId, tag: 'auto-quant' },
         sessions: [{
-          resumeId: 'demo-resume-thesis-owner', agent: 'claude',
+          resumeId: 'resume-demo-thesis-owner', agent: 'claude',
           createdAt: Date.now() - 86_400_000, updatedAt: Date.now() - 60_000,
           resumable: true, active: false,
           latestExecution: {

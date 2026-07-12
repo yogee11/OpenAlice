@@ -59,7 +59,7 @@ describe('issue_create', () => {
   it('creates an issue, stamps the workspace assignee, and is reachable via the reader', async () => {
     const res = await run(issueCreateFactory.build(ctx()), { title: 'Fix the thing' })
     expect(res.ok).toBe(true)
-    expect(res.issue).toMatchObject({ id: 'fix-the-thing', title: 'Fix the thing', assignee: 'workspace' })
+    expect(res.issue).toMatchObject({ id: 'fix-the-thing', title: 'Fix the thing', assignee: '@workspace' })
     const issue = await readBack('fix-the-thing')
     expect(issue?.title).toBe('Fix the thing')
   })
@@ -103,10 +103,10 @@ describe('issue_create', () => {
       when: { kind: 'every', every: '30m' },
     })
     expect(created.ok).toBe(true)
-    expect((await readBack('fresh-owner'))?.assignee).toBe('workspace')
+    expect((await readBack('fresh-owner'))?.assignee).toBe('@workspace')
   })
 
-  it('binds resume ownership to the server-attributed current Session', async () => {
+  it('defaults creation to the server-attributed current Session', async () => {
     const context = ctx({
       origin: {
         kind: 'interactive',
@@ -119,14 +119,19 @@ describe('issue_create', () => {
       id: 'owned-schedule',
       title: 'Owned schedule',
       when: { kind: 'every', every: '30m' },
-      assignee: 'session:self',
     })
     expect(created.ok).toBe(true)
     expect((await readBack('owned-schedule'))?.assignee)
-      .toBe('session:resume-kind-owl-abc123')
+      .toBe('@resume-kind-owl-abc123')
+
+    const explicit = await run(issueCreateFactory.build(context), {
+      id: 'owned-explicit', title: 'Owned explicit', assignee: '@me',
+    })
+    expect(explicit.ok).toBe(true)
+    expect((await readBack('owned-explicit'))?.assignee).toBe('@resume-kind-owl-abc123')
   })
 
-  it('refuses to assign a Session from another workspace', async () => {
+  it('allows assigning an exact signed Session from another workspace', async () => {
     const context = ctx({
       resolveSessionIdentity: () => ({ workspaceId: 'ws-peer', agent: 'pi', resumable: true }),
     })
@@ -134,10 +139,9 @@ describe('issue_create', () => {
       id: 'foreign-owner',
       title: 'Foreign owner',
       when: { kind: 'every', every: '30m' },
-      assignee: 'session:resume-peer',
+      assignee: '@resume-peer',
     })
-    expect(result.ok).toBe(false)
-    expect(result.error).toMatch(/another workspace/)
+    expect(result.ok).toBe(true)
   })
 
   it('refuses to assign a Session that has no resumable runtime identity yet', async () => {
@@ -148,7 +152,7 @@ describe('issue_create', () => {
       id: 'unready-owner',
       title: 'Unready owner',
       when: { kind: 'every', every: '30m' },
-      assignee: 'session:resume-unready',
+      assignee: '@resume-unready',
     })
     expect(result.ok).toBe(false)
     expect(result.error).toMatch(/not resumable yet/)
@@ -161,7 +165,7 @@ describe('issue_update', () => {
       id: 'sched',
       title: 'scheduled work',
       when: { kind: 'every', every: '30m' },
-      assignee: 'workspace',
+      assignee: '@workspace',
       what: 'keep me',
     })
     const res = await run(issueUpdateFactory.build(ctx()), {
@@ -255,13 +259,13 @@ describe('global board (ctx.board present)', () => {
         tag: 'auto-quant',
         status: 'ok',
         issues: [
-          { id: 'alpha', title: 'Alpha', status: 'todo', priority: 'high', assignee: 'human' },
+          { id: 'alpha', title: 'Alpha', status: 'todo', priority: 'high', assignee: '@human' },
           {
             id: 'shared-a',
             title: 'Shared',
             status: 'in_progress',
             priority: 'none',
-            assignee: 'workspace',
+            assignee: '@workspace',
             when: { kind: 'every', every: '30m' },
             nameCollision: true,
           },
@@ -277,7 +281,7 @@ describe('global board (ctx.board present)', () => {
             title: 'Shared',
             status: 'todo',
             priority: 'low',
-            assignee: 'unassigned',
+            assignee: '@unassigned',
             nameCollision: true,
           },
         ],
@@ -295,7 +299,7 @@ describe('global board (ctx.board present)', () => {
         what: 'the alpha body',
         status: 'todo',
         priority: 'high',
-        assignee: 'human',
+        assignee: '@human',
       },
       comments: [],
       runs: [],
@@ -395,7 +399,7 @@ describe('global board (ctx.board present)', () => {
     const detail: IssueDetail = {
       issue: {
         id: 'alpha', title: 'Alpha', what: 'one canonical prompt', status: 'todo',
-        priority: 'high', assignee: 'human',
+        priority: 'high', assignee: '@human',
       },
       comments: [],
       runs: [{

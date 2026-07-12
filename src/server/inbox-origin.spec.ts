@@ -5,7 +5,7 @@ import { resolveInboxOrigin } from './inbox-origin.js'
 
 /** Build a structural fake service with both authorities. */
 function svc(opts: {
-  headless?: Record<string, { taskId: string; resumeId: string; issueId?: string; agent: string }>
+  headless?: Record<string, { taskId: string; resumeId: string; trigger?: { kind: 'issue'; workspaceId: string; issueId: string }; agent: string }>
   sessions?: Record<string, Record<string, { id: string; wsId: string; agent: string }>>
 } = {}) {
   return {
@@ -19,12 +19,13 @@ function svc(opts: {
 describe('resolveInboxOrigin — headless (Phase 1)', () => {
   it('builds a headless origin from the authoritative record', () => {
     const origin = resolveInboxOrigin({ run: 'run-7' }, () =>
-      svc({ headless: { 'run-7': { taskId: 'run-7', resumeId: 'resume-7', issueId: 'macro', agent: 'claude' } } }) as any,
+      svc({ headless: { 'run-7': { taskId: 'run-7', resumeId: 'resume-7', trigger: { kind: 'issue', workspaceId: 'research', issueId: 'macro' }, agent: 'claude' } } }) as any,
     )
     expect(origin).toEqual({
       kind: 'headless',
       runId: 'run-7',
       issueId: 'macro',
+      issueWorkspaceId: 'research',
       agent: 'claude',
       resumeId: 'resume-7',
     })
@@ -102,7 +103,7 @@ describe('resolveInboxOrigin — precedence + both-absent', () => {
           'run-7': {
             taskId: 'run-7',
             resumeId: 'resume-7',
-            issueId: 'macro',
+            trigger: { kind: 'issue', workspaceId: 'research', issueId: 'macro' },
             agent: 'claude',
           },
         },
@@ -114,6 +115,7 @@ describe('resolveInboxOrigin — precedence + both-absent', () => {
       runId: 'run-7',
       resumeId: 'resume-7',
       issueId: 'macro',
+      issueWorkspaceId: 'research',
       agent: 'claude',
     })
   })

@@ -710,6 +710,20 @@ export function createWorkspaceRoutes(
    * use this to render tombstone states. Larger than 1 MiB returns 413
    * so the inbox can't be weaponised into a large-file viewer.
    */
+  app.get('/signatures/:resumeId', (c) => {
+    const resumeId = c.req.param('resumeId');
+    if (!validId(resumeId)) return c.json({ error: 'not_found' }, 404);
+    const identity = svc.resumeRegistry.get(resumeId);
+    if (!identity) return c.json({ error: 'not_found' }, 404);
+    return c.json({
+      signature: `@${identity.resumeId}`,
+      resumeId: identity.resumeId,
+      workspaceId: identity.wsId,
+      agent: identity.agent,
+      resumable: Boolean(identity.agentSessionId),
+    });
+  });
+
   app.get('/:id/file', async (c) => {
     const id = c.req.param('id');
     if (!validId(id)) return c.json({ error: 'not_found' }, 404);

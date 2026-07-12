@@ -108,7 +108,7 @@ function AssigneeEditor({
   const sessionChoices = sessions.filter(
     (session) => session.resumeId && session.agent !== 'shell' && session.resumable,
   )
-  const selectedResumeId = value.startsWith('session:') ? value.slice('session:'.length) : null
+  const selectedResumeId = value.startsWith('@resume-') ? value.slice(1) : null
   const hasSelected = !selectedResumeId || sessionChoices.some((session) => session.resumeId === selectedResumeId)
   const labelFor = (session: WorkspaceSessionDirectoryEntry) => {
     const raw = session.interactive?.title
@@ -127,17 +127,17 @@ function AssigneeEditor({
       aria-label="Assignee"
       onChange={(event) => onChange(event.target.value)}
     >
-      <option value="workspace">{scheduled ? 'Workspace · new Session each run' : 'Workspace'}</option>
-      {!scheduled && <option value="human">Human</option>}
-      {!scheduled && <option value="unassigned">Unassigned</option>}
+      <option value="@workspace">{scheduled ? '@Workspace · new Session each run' : '@Workspace'}</option>
+      {!scheduled && <option value="@human">Human</option>}
+      {!scheduled && <option value="@unassigned">Unassigned</option>}
       <optgroup label="Workspace Sessions">
         {sessionChoices.map((session) => (
-          <option key={session.resumeId} value={`session:${session.resumeId}`}>
+          <option key={session.resumeId} value={`@${session.resumeId}`}>
             {labelFor(session)}
           </option>
         ))}
         {!hasSelected && selectedResumeId && (
-          <option value={value}>Unavailable Session · {selectedResumeId}</option>
+          <option value={value}>Signed Session · {selectedResumeId}</option>
         )}
       </optgroup>
     </select>
@@ -262,8 +262,8 @@ function PropertiesRail({
   const meta = STATUS_META[issue.status]
   const issueDefaultInOptions = issueDefaultAgent && agentOptions.some((a) => a.id === issueDefaultAgent) ? issueDefaultAgent : null
   const defaultInOptions = defaultAgent && agentOptions.some((a) => a.id === defaultAgent) ? defaultAgent : null
-  const ownerResumeId = issue.assignee.startsWith('session:')
-    ? issue.assignee.slice('session:'.length)
+  const ownerResumeId = issue.assignee.startsWith('@resume-')
+    ? issue.assignee.slice(1)
     : null
   const ownerSession = ownerResumeId
     ? sessions.find((session) => session.resumeId === ownerResumeId)
@@ -940,8 +940,8 @@ export function IssueDetail({
     </button>
   )
 
-  const stableOwnerResumeId = data?.issue.assignee.startsWith('session:')
-    ? data.issue.assignee.slice('session:'.length)
+  const stableOwnerResumeId = data?.issue.assignee.startsWith('@resume-')
+    ? data.issue.assignee.slice(1)
     : null
 
   useEffect(() => {

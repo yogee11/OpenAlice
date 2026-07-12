@@ -105,15 +105,15 @@ export function createIssuesRoutes(svc: WorkspaceService): Hono {
       const a = fields['assignee']
       const assignee = typeof a === 'string' ? issueAssigneeSchema.safeParse(a.trim()) : null
       if (!assignee?.success) {
-        return c.json({ error: 'invalid_assignee', message: 'assignee must be workspace, human, unassigned, or session:<resumeId>' }, 400)
+        return c.json({ error: 'invalid_assignee', message: 'assignee must be @workspace, @human, @unassigned, or an exact @resumeId' }, 400)
       }
       const resumeId = issueAssigneeResumeId(assignee.data)
       if (resumeId) {
         const identity = svc.resumeRegistry.get(resumeId)
-        if (!identity || identity.wsId !== wsId) {
+        if (!identity) {
           return c.json({
             error: 'invalid_assignee_session',
-            message: 'session assignee must identify a product Session in this Workspace',
+            message: 'Session assignee must identify a known product Session',
           }, 400)
         }
         if (!identity.agentSessionId) {

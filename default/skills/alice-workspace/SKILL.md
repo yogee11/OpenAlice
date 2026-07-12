@@ -156,9 +156,10 @@ alice-workspace issue list --mode detailed  # full global board, including low-p
 alice-workspace issue show --id <name>      # compact issue + provenance/resumeId run/report references
 alice-workspace issue show --id <name> --mode detailed  # every execution prompt + full reports
 alice-workspace issue create --title "…"    # a new issue on THIS workspace's board
-alice-workspace issue create --title "…" --when '{"kind":"every","every":"1h"}' --assignee session:self
+alice-workspace issue create --title "…" --when '{"kind":"every","every":"1h"}' --assignee @me
 alice-workspace issue update --id <id> --status in_progress
 alice-workspace issue comment --id <id> --text "progress note / finding"
+alice-workspace signature show               # your @resumeId for standalone Markdown
 ```
 
 Work it like a human board: start with plain `list`, decide which focus rows
@@ -169,6 +170,8 @@ the whole board (all workspaces); `create` / `update` / `comment` write **this**
 workspace's own `.alice/issues/` files (changing a peer's board is the
 human-approved peer-edit path). The full on-disk file model + self-scheduling
 (an issue with a `when` fires a headless run) lives in the **`self-scheduling`**
-skill. `assignee` is the single ownership and dispatch contract: `workspace`
-recruits a new Session each fire, while `session:self` or
-`session:<resumeId>` keeps one accountable product Session.
+skill. `assignee` is the single ownership and dispatch contract: `@workspace`
+recruits a new Session each fire, `@me` resolves to the caller, and an exact
+`@resumeId` keeps one accountable product Session. Issue/Inbox CLI actions are
+signed automatically. End standalone reports with `Signed-by: @resumeId`
+(copy it from `signature show`) so another Agent can return to the author.

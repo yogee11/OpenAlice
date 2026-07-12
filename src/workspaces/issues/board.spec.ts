@@ -93,7 +93,7 @@ describe('issueRunRecord', () => {
       taskId: 'task-1',
       resumeId: 'resume-gentle-otter-abc123',
       wsId: 'ws-1',
-      issueId: 'audit',
+      trigger: { kind: 'issue', workspaceId: 'ws-home', issueId: 'audit' },
       agent: 'codex',
       prompt: 'inspect it',
       status: 'done',
@@ -120,7 +120,7 @@ function ws(wsId: string, titles: string[]): IssuesSnapshotWorkspace {
       title,
       status: 'todo',
       priority: 'none',
-      assignee: 'unassigned',
+      assignee: '@unassigned',
     })),
   }
 }
@@ -160,13 +160,13 @@ describe('flattenBoardRows', () => {
           tag: 'auto-quant',
           status: 'ok',
           issues: [
-            { id: 'x', title: 'X', status: 'todo', priority: 'high', assignee: 'human' },
+            { id: 'x', title: 'X', status: 'todo', priority: 'high', assignee: '@human' },
             {
               id: 'y',
               title: 'Y',
               status: 'todo',
               priority: 'none',
-              assignee: 'workspace',
+              assignee: '@workspace',
               agent: 'pi',
               when: { kind: 'every', every: '1h' },
               nameCollision: true,
@@ -184,7 +184,7 @@ describe('flattenBoardRows', () => {
         title: 'X',
         status: 'todo',
         priority: 'high',
-        assignee: 'human',
+        assignee: '@human',
         scheduled: false,
         workspace: { wsId: 'a', tag: 'auto-quant' },
       },
@@ -193,7 +193,7 @@ describe('flattenBoardRows', () => {
         title: 'Y',
         status: 'todo',
         priority: 'none',
-        assignee: 'workspace',
+        assignee: '@workspace',
         agent: 'pi',
         scheduled: true,
         workspace: { wsId: 'a', tag: 'auto-quant' },
@@ -210,19 +210,19 @@ describe('assignee projection', () => {
     title: 'Issue',
     status: 'todo',
     priority: 'none',
-    assignee: 'workspace',
+    assignee: '@workspace',
     what: 'Issue',
   } as const
 
   it('projects Workspace ownership without needing a workspace-tag rewrite', () => {
-    expect(snapshotBoardIssue(baseIssue, null).assignee).toBe('workspace')
-    expect(detailIssue(baseIssue, null).assignee).toBe('workspace')
+    expect(snapshotBoardIssue(baseIssue, null).assignee).toBe('@workspace')
+    expect(detailIssue(baseIssue, null).assignee).toBe('@workspace')
   })
 
   it('respects an explicit unassigned assignee', () => {
-    const issue = { ...baseIssue, assignee: 'unassigned' as const }
-    expect(snapshotBoardIssue(issue, null).assignee).toBe('unassigned')
-    expect(detailIssue(issue, null).assignee).toBe('unassigned')
+    const issue = { ...baseIssue, assignee: '@unassigned' as const }
+    expect(snapshotBoardIssue(issue, null).assignee).toBe('@unassigned')
+    expect(detailIssue(issue, null).assignee).toBe('@unassigned')
   })
 })
 
@@ -236,10 +236,10 @@ describe('inboxReportsForIssue', () => {
   ] as unknown as InboxEntry[]
 
   it('keeps only entries whose origin.issueId matches, preserving order', () => {
-    expect(inboxReportsForIssue(entries, 'i1').map((e) => e.id)).toEqual(['e3', 'e1'])
+    expect(inboxReportsForIssue(entries, 'w', 'i1').map((e) => e.id)).toEqual(['e3', 'e1'])
   })
 
   it('returns [] for a non-matching issue and ignores origin-less entries', () => {
-    expect(inboxReportsForIssue(entries, 'nope')).toEqual([])
+    expect(inboxReportsForIssue(entries, 'w', 'nope')).toEqual([])
   })
 })

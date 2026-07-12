@@ -50,6 +50,11 @@ import {
 } from '../workspaces/issues/mutate.js'
 import { readIssueComments, type IssueComment } from '../workspaces/issues/comments.js'
 import {
+  WORKSPACE_ASSIGNEE,
+  normalizeIssueAssigneeAlias,
+  sessionSignature,
+} from '../workspaces/session-signature.js'
+import {
   flattenBoardRows,
   type BoardInvalidWorkspace,
   type BoardRow,
@@ -65,8 +70,8 @@ function selfDir(ctx: WorkspaceToolContext): { ok: true; dir: string } | { ok: f
 }
 
 const issueAssigneeInputSchema = z.string().min(1).refine(
-  (value) => value === 'session:self' || issueAssigneeSchema.safeParse(value).success,
-  'assignee must be workspace, human, unassigned, session:self, or session:<resumeId>',
+  (value) => value.toLowerCase() === '@me' || issueAssigneeSchema.safeParse(normalizeIssueAssigneeAlias(value)).success,
+  'assignee must be @me, @workspace, @human, @unassigned, or an exact @resumeId',
 )
 
 function resolveIssueAssignee(
@@ -74,15 +79,14 @@ function resolveIssueAssignee(
   requested: string | undefined,
 ): { ok: true; assignee?: string } | { ok: false; error: string } {
   if (!requested) return { ok: true }
-  const selfResumeId = requested === 'session:self'
+  const isMe = requested.toLowerCase() === '@me'
+  const selfResumeId = isMe
     ? sessionOriginFromInboxOrigin(ctx.workspaceId, ctx.origin)?.resumeId
     : undefined
-  if (requested === 'session:self' && !selfResumeId) {
-    return { ok: false, error: 'session:self needs an attributable product Session' }
+  if (isMe && !selfResumeId) {
+    return { ok: false, error: '@me needs an attributable product Session' }
   }
-  const assignee = requested === 'session:self'
-    ? `session:${selfResumeId}`
-    : requested
+  const assignee = isMe ? sessionSignature(selfResumeId!) : normalizeIssueAssigneeAlias(requested)
   const parsed = issueAssigneeSchema.safeParse(assignee)
   if (!parsed.success) return { ok: false, error: 'invalid assignee' }
   const resumeId = issueAssigneeResumeId(parsed.data)
@@ -90,9 +94,6 @@ function resolveIssueAssignee(
   const identity = ctx.resolveSessionIdentity?.(resumeId)
   if (ctx.resolveSessionIdentity && !identity) {
     return { ok: false, error: `unknown product Session: ${resumeId}` }
-  }
-  if (identity && identity.workspaceId !== ctx.workspaceId) {
-    return { ok: false, error: `product Session ${resumeId} belongs to another workspace` }
   }
   if (identity && !identity.resumable) {
     return {
@@ -231,8 +232,8 @@ export const issueUpdateFactory: WorkspaceToolFactory = {
         "Update one of THIS workspace's issues — its board fields.",
         '',
         'Patch any subset of `status`, `priority`, `assignee`, `what`; omitted fields are',
-        'left untouched. `assignee:"session:self"` binds this current product',
-        'Session; pass `session:<resumeId>` to assign another known Session. What is the',
+        'left untouched. `assignee:"@me"` binds this current product',
+        'Session; pass an exact `@resumeId` to assign another known Session. What is the',
         'canonical markdown work definition and exact scheduled prompt. Other scheduling',
         'frontmatter (`when`/`agent`) is preserved — edit it by writing the file directly',
         '(`.alice/issues/<id>.md`).',
@@ -246,7 +247,7 @@ export const issueUpdateFactory: WorkspaceToolFactory = {
         priority: z.enum(ISSUE_PRIORITIES).optional().describe('New priority.'),
         assignee: issueAssigneeInputSchema
           .optional()
-          .describe('workspace, human, unassigned, session:self, or session:<resumeId>.'),
+          .describe('@workspace, @human, @unassigned, @me, or an exact @resumeId.'),
         what: z.string().min(1).optional().describe('Canonical markdown work definition; exact scheduled prompt.'),
       }),
       execute: async ({ id, status, priority, assignee, what }) => {
@@ -324,8 +325,9 @@ export const issueCreateFactory: WorkspaceToolFactory = {
         'the scanner sends that exact visible What to the Agent Runtime; without',
         '`when` the same What remains a pure board work item. Assignee is the',
         'only ownership field:',
-        '`workspace` (the default) recruits a new Session each fire, while',
-        '`session:self` or `session:<resumeId>` keeps one accountable Session.',
+        '`@workspace` recruits a new Session each fire. `@me` resolves to this',
+        'calling Session, while an exact `@resumeId` keeps one accountable',
+        'Session (including a deliberately signed Session from another Workspace).',
       ].join('\n'),
       inputSchema: z.object({
         title: z.string().min(1).describe('Short human title (required).'),
@@ -338,17 +340,23 @@ export const issueCreateFactory: WorkspaceToolFactory = {
         priority: z.enum(ISSUE_PRIORITIES).optional().describe('Initial priority (default "none").'),
         assignee: issueAssigneeInputSchema
           .optional()
-          .describe('Initial owner (default workspace). Use session:self for the current Session.'),
+          .describe('Initial owner. Omit or use @me for the current Session; use @workspace to recruit a fresh Session each fire.'),
         when: issueWhenSchema
           .optional()
           .describe('Schedule shape — { kind:"at", at } | { kind:"every", every } | { kind:"cron", cron }. Present iff the issue self-schedules.'),
         what: z.string().min(1).optional().describe('Markdown work definition; exact scheduled prompt. Defaults to title.'),
-        agent: z.string().min(1).optional().describe('Adapter id when assignee is workspace; Session assignees own their runtime.'),
+        agent: z.string().min(1).optional().describe('Adapter id when assignee is @workspace; Session assignees own their runtime.'),
       }),
       execute: async ({ title, id, status, priority, assignee, when, what, agent }) => {
         const dir = selfDir(ctx)
         if (!dir.ok) return { ok: false as const, error: dir.error }
-        const resolvedAssignee = resolveIssueAssignee(ctx, assignee ?? 'workspace')
+        // Structured creation is attributable: "who creates it owns it". A
+        // human/unattributed caller has no Session to sign with, so its safe
+        // fallback is the Issue's home Workspace recruiting a fresh worker.
+        const defaultAssignee = sessionOriginFromInboxOrigin(ctx.workspaceId, ctx.origin)
+          ? '@me'
+          : WORKSPACE_ASSIGNEE
+        const resolvedAssignee = resolveIssueAssignee(ctx, assignee ?? defaultAssignee)
         if (!resolvedAssignee.ok) return { ok: false as const, error: resolvedAssignee.error }
         const res = await createIssue(dir.dir, {
           title,

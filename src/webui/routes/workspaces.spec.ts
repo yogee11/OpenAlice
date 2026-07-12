@@ -129,6 +129,24 @@ describe('GET /:id/resumes', () => {
   })
 })
 
+describe('GET /signatures/:resumeId', () => {
+  it('resolves a globally signed Session without exposing its native runtime id', async () => {
+    const { app } = build({ resumeIdentity: {
+      resumeId: 'resume-kind-owl-abc123', wsId: 'ws-peer', agent: 'codex', agentSessionId: 'native-secret',
+    } })
+    const result = await get(app, '/signatures/resume-kind-owl-abc123')
+    expect(result.status).toBe(200)
+    expect(result.body).toEqual({
+      signature: '@resume-kind-owl-abc123',
+      resumeId: 'resume-kind-owl-abc123',
+      workspaceId: 'ws-peer',
+      agent: 'codex',
+      resumable: true,
+    })
+    expect(JSON.stringify(result.body)).not.toContain('native-secret')
+  })
+})
+
 async function post(app: any, path: string, body?: unknown) {
   const res = await app.request(path, {
     method: 'POST',

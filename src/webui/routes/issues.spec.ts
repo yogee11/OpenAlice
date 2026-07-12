@@ -122,17 +122,17 @@ describe('PATCH /api/issues/:wsId/:id', () => {
     expect(invalid.body.error).toBe('invalid_assignee')
 
     const updated = await req(app, 'PATCH', '/ws-1/i1', {
-      assignee: 'session:resume-kind-owl-abc123',
+      assignee: '@resume-kind-owl-abc123',
     })
     expect(updated.status).toBe(200)
-    expect(updated.body.issue.assignee).toBe('session:resume-kind-owl-abc123')
+    expect(updated.body.issue.assignee).toBe('@resume-kind-owl-abc123')
   })
 
   it('409 when the selected Session assignee is not resumable yet', async () => {
     await createIssue(wsDir, { id: 'i1', title: 'T', when: { kind: 'every', every: '1h' } })
     const { app } = build()
     const unavailable = await req(app, 'PATCH', '/ws-1/i1', {
-      assignee: 'session:resume-unready',
+      assignee: '@resume-unready',
     })
     expect(unavailable.status).toBe(409)
     expect(unavailable.body.error).toBe('unavailable_assignee_session')
@@ -150,14 +150,14 @@ describe('PATCH /api/issues/:wsId/:id', () => {
     await createIssue(wsDir, { id: 'i1', title: 'T', body: 'keep me' })
     const { app, appendProvenance } = build()
     const r = await req(app, 'PATCH', '/ws-1/i1', {
-      status: 'in_progress', priority: 'high', assignee: 'human', agent: 'pi', what: 'new exact work',
+      status: 'in_progress', priority: 'high', assignee: '@human', agent: 'pi', what: 'new exact work',
     })
     expect(r.status).toBe(200)
     expect(r.body.issue).toMatchObject({
       id: 'i1',
       status: 'in_progress',
       priority: 'high',
-      assignee: 'human',
+      assignee: '@human',
       agent: 'pi',
       what: 'new exact work',
     })

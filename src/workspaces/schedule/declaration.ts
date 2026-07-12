@@ -44,7 +44,7 @@ export interface ScheduleSnapshotTask {
   when: Schedule
   /** The prompt this fire hands to the headless run (resolved `what`/title+body). */
   what: string
-  /** Unified owner. `workspace` recruits a fresh Session; `session:<resumeId>` resumes one. */
+  /** Unified owner. `@workspace` recruits a fresh Session; exact `@resumeId` resumes one. */
   assignee: string
   agent?: string
   /** False once the owning issue reaches a terminal status (done/canceled). */

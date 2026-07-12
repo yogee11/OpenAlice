@@ -308,7 +308,7 @@ export function issueRunRecord(task: HeadlessTaskRecord, resumable: boolean): Is
     resumeId: task.resumeId,
     ...(task.parentTaskId ? { parentTaskId: task.parentTaskId } : {}),
     wsId: task.wsId,
-    ...(task.issueId ? { issueId: task.issueId } : {}),
+    ...(task.trigger?.kind === 'issue' ? { issueId: task.trigger.issueId } : {}),
     agent: task.agent,
     prompt: task.prompt,
     status: task.status,
@@ -341,8 +341,15 @@ export function issueActivityRecords(
  *  (`origin.issueId` match). Pure + order-preserving, so the caller's
  *  newest-first read order carries through. The issue→inbox join, kept in the
  *  domain (not the HTTP route) so every surface — CLI, MCP — gets it. */
-export function inboxReportsForIssue(entries: readonly InboxEntry[], issueId: string): InboxEntry[] {
-  return entries.filter((e) => e.origin?.issueId === issueId)
+export function inboxReportsForIssue(
+  entries: readonly InboxEntry[],
+  workspaceId: string,
+  issueId: string,
+): InboxEntry[] {
+  return entries.filter((entry) =>
+    entry.origin?.issueId === issueId &&
+    (entry.origin.issueWorkspaceId ?? entry.workspaceId) === workspaceId,
+  )
 }
 
 /** Map a validated issue (+ its firing markers, iff scheduled) to the detail

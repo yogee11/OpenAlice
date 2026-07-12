@@ -80,7 +80,7 @@ function issueMd(spec: IssueSpec): string {
   if (spec.priority) lines.push(`priority: ${spec.priority}`)
   if (spec.what) lines.push(`what: ${spec.what}`)
   if (spec.agent) lines.push(`agent: ${spec.agent}`)
-  if (spec.assignee) lines.push(`assignee: ${spec.assignee}`)
+  if (spec.assignee) lines.push(`assignee: ${JSON.stringify(spec.assignee)}`)
   if (spec.when) {
     const w = spec.when
     const inner =
@@ -112,19 +112,21 @@ function scannerFor(
       a: CliAdapter,
       p: string,
       t: number,
-      issueId?: string,
+      trigger?: import('../headless-task-registry.js').HeadlessTaskTrigger,
       resumeId?: string,
     ) => Promise<{ taskId: string }>
     markers?: MarkerStore
     now?: number
     adapter?: CliAdapter
     resolveAdapter?: ScheduleScannerDeps['resolveAdapter']
+    resolveResumeWorkspace?: ScheduleScannerDeps['resolveResumeWorkspace']
   } = {},
 ) {
   const dispatch = opts.dispatch ?? vi.fn(async () => ({ taskId: 'run-1' }))
   const markers = opts.markers ?? new FakeMarkers()
   const scanner = new ScheduleScanner({
     registry: { list: () => workspaces } as unknown as WorkspaceRegistry,
+    resolveResumeWorkspace: opts.resolveResumeWorkspace ?? (() => workspaces[0]),
     resolveAdapter: opts.resolveAdapter ?? (() => opts.adapter ?? headlessAdapter),
     dispatch,
     markers,
@@ -141,7 +143,9 @@ describe('ScheduleScanner', () => {
     await scanner.scan()
     expect(dispatch).toHaveBeenCalledTimes(1)
     // 5th arg = the firing issue's id, threaded so the run records its origin.
-    expect(dispatch).toHaveBeenCalledWith(ws, headlessAdapter, 'go', expect.any(Number), 't1')
+    expect(dispatch).toHaveBeenCalledWith(ws, headlessAdapter, 'go', expect.any(Number), {
+      kind: 'issue', workspaceId: 'w1', issueId: 't1',
+    })
     expect(markers.get('w1', 't1')).toBe(NOW)
   })
 
@@ -151,7 +155,7 @@ describe('ScheduleScanner', () => {
       title: 'owned work',
       when: { kind: 'every', every: '30m' },
       what: 'continue',
-      assignee: 'session:resume-kind-owl-abc123',
+      assignee: '@resume-kind-owl-abc123',
     }])
     const resolveAdapter = vi.fn(async () => headlessAdapter)
     const { scanner, dispatch } = scannerFor([ws], { resolveAdapter })
@@ -163,11 +167,34 @@ describe('ScheduleScanner', () => {
       headlessAdapter,
       'continue',
       expect.any(Number),
-      'owned',
+      { kind: 'issue', workspaceId: 'w1', issueId: 'owned' },
       'resume-kind-owl-abc123',
     )
     expect(scanner.snapshot()!.workspaces[0].tasks[0].assignee)
-      .toBe('session:resume-kind-owl-abc123')
+      .toBe('@resume-kind-owl-abc123')
+  })
+
+  it('executes an exact cross-Workspace signature while retaining the home Issue trigger', async () => {
+    const home = await makeWs('home', [{
+      id: 'review-report', title: 'Review report', when: { kind: 'every', every: '30m' },
+      what: 'revisit your report', assignee: '@resume-peer-author',
+    }])
+    const execution = await makeWs('peer', [])
+    const resolveAdapter = vi.fn(async () => headlessAdapter)
+    const { scanner, dispatch } = scannerFor([home, execution], {
+      resolveAdapter,
+      resolveResumeWorkspace: () => execution,
+    })
+    await scanner.scan()
+    expect(resolveAdapter).toHaveBeenCalledWith(execution, undefined, 'resume-peer-author')
+    expect(dispatch).toHaveBeenCalledWith(
+      execution,
+      headlessAdapter,
+      'revisit your report',
+      expect.any(Number),
+      { kind: 'issue', workspaceId: 'home', issueId: 'review-report' },
+      'resume-peer-author',
+    )
   })
 
   it('ignores an UNSCHEDULED issue (no when): never fires, never in the snapshot', async () => {
@@ -188,7 +215,9 @@ describe('ScheduleScanner', () => {
     const { scanner, dispatch } = scannerFor([ws])
     await scanner.scan()
     expect(dispatch).toHaveBeenCalledTimes(1)
-    expect(dispatch).toHaveBeenCalledWith(ws, headlessAdapter, 'go', expect.any(Number), 'sched')
+    expect(dispatch).toHaveBeenCalledWith(ws, headlessAdapter, 'go', expect.any(Number), {
+      kind: 'issue', workspaceId: 'w1', issueId: 'sched',
+    })
     expect(scanner.snapshot()!.workspaces[0].tasks.map((t) => t.id)).toEqual(['sched'])
   })
 
@@ -198,7 +227,9 @@ describe('ScheduleScanner', () => {
     ])
     const { scanner, dispatch } = scannerFor([ws])
     await scanner.scan()
-    expect(dispatch).toHaveBeenCalledWith(ws, headlessAdapter, 'scan movers', expect.any(Number), 't1')
+    expect(dispatch).toHaveBeenCalledWith(ws, headlessAdapter, 'scan movers', expect.any(Number), {
+      kind: 'issue', workspaceId: 'w1', issueId: 't1',
+    })
   })
 
   it('fires a never-fired cron issue whose occurrence is within the last tick (not never)', async () => {

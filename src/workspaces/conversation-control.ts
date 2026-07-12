@@ -295,7 +295,7 @@ export function createWorkspaceConversationControl(
         startedAt: task.startedAt,
         structured,
         ...(task.parentTaskId ? { parentTaskId: task.parentTaskId } : {}),
-        ...(task.issueId ? { issueId: task.issueId } : {}),
+        ...(task.trigger?.kind === 'issue' ? { issueId: task.trigger.issueId } : {}),
         ...(task.finishedAt !== undefined ? { finishedAt: task.finishedAt } : {}),
         ...(task.durationMs !== undefined ? { durationMs: task.durationMs } : {}),
         ...(task.error ? { error: task.error } : {}),

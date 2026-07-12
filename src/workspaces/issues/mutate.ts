@@ -153,7 +153,7 @@ export async function updateIssueFields(
     const a = patch.assignee.trim()
     const assignee = issueAssigneeSchema.safeParse(a)
     if (!assignee.success) {
-      return { ok: false, reason: 'invalid', error: 'assignee must be workspace, human, unassigned, or session:<resumeId>' }
+      return { ok: false, reason: 'invalid', error: 'assignee must be @workspace, @human, @unassigned, or an exact @resumeId' }
     }
     data.assignee = assignee.data
     if (issueAssigneeResumeId(assignee.data)) delete data.agent

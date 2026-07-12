@@ -9,11 +9,9 @@ export interface HeadlessTaskRecord {
   /** Direct execution lineage within this resumable conversation. */
   parentTaskId?: string
   wsId: string
-  /** The workspace ISSUE that fired this run (the issue filename stem), when it
-   *  was dispatched by the scheduler from a scheduled `.alice/issues/<id>.md`.
-   *  Absent on manual/external dispatches and on runs predating the field. This
-   *  is the run↔issue link the issue detail's Activity feed joins on. */
-  issueId?: string
+  /** Business source; independent from wsId when a cross-Workspace signed
+   * Session executes an Issue owned by another Workspace. */
+  trigger?: { kind: 'issue'; workspaceId: string; issueId: string }
   agent: string
   prompt: string
   status: HeadlessTaskStatus

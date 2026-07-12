@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { readWorkspaceIssues } from '@/workspaces/issues/declaration.js'
 
 import { migrateIssueAssigneeOwnership } from './0018_issue_assignee_ownership/index.js'
+import { migrateIssueSessionSignatures } from './0019_issue_session_signatures/index.js'
 
 let root: string
 let wsDir: string
@@ -57,15 +58,16 @@ Do fresh work.
     expect(fresh).toContain('assignee: workspace')
     expect(fresh).not.toMatch(/^execution:/m)
 
+    expect(await migrateIssueAssigneeOwnership(root)).toEqual({ updated: 0, workspaces: 0 })
+    await migrateIssueSessionSignatures(root)
+
     const issues = await readWorkspaceIssues(wsDir)
     expect(issues.ok).toBe(true)
     if (!issues.ok) return
     expect(issues.issues.map((issue) => [issue.id, issue.assignee])).toEqual([
-      ['fresh', 'workspace'],
-      ['owned', 'session:resume-calm-cedar-a1b2c3'],
+      ['fresh', '@workspace'],
+      ['owned', '@resume-calm-cedar-a1b2c3'],
     ])
-
-    expect(await migrateIssueAssigneeOwnership(root)).toEqual({ updated: 0, workspaces: 0 })
   })
 
   it('normalizes old workspace labels while preserving unscheduled human ownership', async () => {
@@ -85,12 +87,13 @@ Human-owned.
 `, 'utf8')
 
     await migrateIssueAssigneeOwnership(root)
+    await migrateIssueSessionSignatures(root)
     const issues = await readWorkspaceIssues(wsDir)
     expect(issues.ok).toBe(true)
     if (!issues.ok) return
     expect(issues.issues.map((issue) => [issue.id, issue.assignee])).toEqual([
-      ['human', 'human'],
-      ['workspace', 'workspace'],
+      ['human', '@human'],
+      ['workspace', '@workspace'],
     ])
   })
 })

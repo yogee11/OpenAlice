@@ -257,7 +257,10 @@ describe('CLI gateway — agent-invisible origin (x-openalice-run → registry)'
       headlessTasks: {
         get: (taskId: string) =>
           taskId === 'run-7'
-            ? { taskId: 'run-7', issueId: 'macro-scan', agent: 'opencode' }
+            ? {
+                taskId: 'run-7', resumeId: 'resume-7', agent: 'opencode',
+                trigger: { kind: 'issue', workspaceId: 'ws1', issueId: 'macro-scan' },
+              }
             : null,
       },
       sessionRegistry: {
@@ -295,7 +298,9 @@ describe('CLI gateway — agent-invisible origin (x-openalice-run → registry)'
     expect(entries[0].origin).toEqual({
       kind: 'headless',
       runId: 'run-7',
+      resumeId: 'resume-7',
       issueId: 'macro-scan',
+      issueWorkspaceId: 'ws1',
       agent: 'opencode',
     })
   })
@@ -336,7 +341,9 @@ describe('CLI gateway — agent-invisible origin (x-openalice-run → registry)'
     expect(entries[0].origin).toEqual({
       kind: 'headless',
       runId: 'run-7',
+      resumeId: 'resume-7',
       issueId: 'macro-scan',
+      issueWorkspaceId: 'ws1',
       agent: 'opencode',
     })
   })

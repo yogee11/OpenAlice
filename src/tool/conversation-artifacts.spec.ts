@@ -130,7 +130,7 @@ describe('issue_ask', () => {
 
   it('asks the declared stable owner by resumeId', async () => {
     const { ctx, ask } = issueContext({
-      assignee: 'session:resume-owner',
+      assignee: '@resume-owner',
     })
     await run(issueAskFactory.build(ctx), { id: 'audit', owner: true, prompt: 'status?' })
     expect(ask).toHaveBeenCalledWith(expect.objectContaining({

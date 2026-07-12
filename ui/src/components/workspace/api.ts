@@ -432,6 +432,20 @@ export interface OpenHeadlessSessionOptions {
   readonly title?: string;
 }
 
+export interface SessionSignatureIdentity {
+  readonly signature: string;
+  readonly resumeId: string;
+  readonly workspaceId: string;
+  readonly agent: string;
+  readonly resumable: boolean;
+}
+
+export async function resolveSessionSignature(resumeId: string): Promise<SessionSignatureIdentity> {
+  const res = await fetch(`/api/workspaces/signatures/${encodeURIComponent(resumeId)}`);
+  if (!res.ok) throw new Error(res.status === 404 ? 'Session signature not found' : `signature lookup failed: ${res.status}`);
+  return (await res.json()) as SessionSignatureIdentity;
+}
+
 export interface OpenHeadlessSessionResult {
   readonly session: SessionRecord;
   readonly created: boolean;

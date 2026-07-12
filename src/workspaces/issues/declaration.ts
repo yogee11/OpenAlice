@@ -20,7 +20,7 @@
  *   title: <required, short human title>
  *   status: backlog | todo | in_progress | done | canceled   (optional → 'todo')
  *   priority: urgent | high | medium | low | none             (optional → 'none')
- *   assignee: "workspace" | "human" | "unassigned" | "session:<resumeId>"  (optional → 'workspace')
+ *   assignee: "@workspace" | "@human" | "@unassigned" | "@<resumeId>"  (optional → '@workspace')
  *   when: { kind: at, at } | { kind: every, every } | { kind: cron, cron }  (OPTIONAL — present iff scheduled)
  *   what: <legacy fire prompt; migrated into the markdown What body>
  *   agent: <optional adapter id for the scheduled run>
@@ -38,6 +38,12 @@ import { parse as parseYaml } from 'yaml'
 import { z } from 'zod'
 
 import type { Schedule } from '../../core/schedule-expr.js'
+import {
+  HUMAN_ASSIGNEE,
+  UNASSIGNED_ASSIGNEE,
+  WORKSPACE_ASSIGNEE,
+  resumeIdFromSignature,
+} from '../session-signature.js'
 
 /** Directory of per-issue markdown files, relative to a workspace's `dir`. */
 export const ISSUES_DIR_REL = join('.alice', 'issues')
@@ -74,15 +80,15 @@ export const issueWhenSchema = z.discriminatedUnion('kind', [
 /** Who owns the Issue. Workspace ownership recruits a fresh Session for each
  * scheduled fire; Session ownership resumes exactly one product Session. */
 export const issueAssigneeSchema = z.union([
-  z.literal('workspace'),
-  z.literal('human'),
-  z.literal('unassigned'),
-  z.string().regex(/^session:[^\s:][^\s]*$/, 'session assignee must be session:<resumeId>'),
+  z.literal(WORKSPACE_ASSIGNEE),
+  z.literal(HUMAN_ASSIGNEE),
+  z.literal(UNASSIGNED_ASSIGNEE),
+  z.string().regex(/^@resume-[^\s]+$/, 'Session assignee must be @<resumeId>'),
 ])
 
 /** Exact product Session owner encoded by the single assignee contract. */
 export function issueAssigneeResumeId(assignee: string): string | null {
-  return assignee.startsWith('session:') ? assignee.slice('session:'.length) || null : null
+  return resumeIdFromSignature(assignee)
 }
 
 /**
@@ -95,7 +101,7 @@ export const issueFrontmatterSchema = z.object({
   title: z.string().min(1),
   status: z.enum(ISSUE_STATUSES).default('todo'),
   priority: z.enum(ISSUE_PRIORITIES).default('none'),
-  assignee: issueAssigneeSchema.default('workspace'),
+  assignee: issueAssigneeSchema.default(WORKSPACE_ASSIGNEE),
   /** Present iff the issue self-schedules. Absent ⇒ pure board work item. */
   when: issueWhenSchema.optional(),
   /** Legacy compatibility only. New files keep What in the markdown document
@@ -109,11 +115,11 @@ export const issueFrontmatterSchema = z.object({
    * `never` key makes stale files fail loudly instead of being silently read. */
   execution: z.never().optional(),
 }).superRefine((value, ctx) => {
-  if (value.when && (value.assignee === 'human' || value.assignee === 'unassigned')) {
+  if (value.when && (value.assignee === HUMAN_ASSIGNEE || value.assignee === UNASSIGNED_ASSIGNEE)) {
     ctx.addIssue({
       code: 'custom',
       path: ['assignee'],
-      message: 'scheduled issues must be assigned to workspace or session:<resumeId>',
+      message: 'scheduled issues must be assigned to @workspace or an exact @resumeId',
     })
   }
   if (issueAssigneeResumeId(value.assignee) && value.agent) {

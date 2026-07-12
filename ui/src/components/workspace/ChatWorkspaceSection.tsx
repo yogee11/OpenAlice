@@ -56,9 +56,8 @@ export function ChatWorkspaceSection(): ReactElement | null {
   const chatWorkspaces = useMemo(
     () => orderWorkspacesForSidebar(
       ctx.workspaces.filter((workspace) => workspace.template === CHAT_TEMPLATE),
-      selection,
     ),
-    [ctx.workspaces, selection],
+    [ctx.workspaces],
   )
   const workspaceListRef = useReorderMotion<HTMLUListElement>(
     chatWorkspaces.map((workspace) => workspace.id),
@@ -169,13 +168,7 @@ export function ChatWorkspaceSection(): ReactElement | null {
             selection={selection}
             onOpen={() => {
               rememberChatWorkspace(w.id)
-              const preferred = orderSessionsForSidebar(w.sessions, null)[0]
-              openOrFocus({
-                kind: 'workspace',
-                params: preferred
-                  ? { wsId: w.id, sessionId: preferred.id, source: 'chat' }
-                  : { wsId: w.id, source: 'chat' },
-              })
+              openOrFocus({ kind: 'chat-landing', params: { targetWsId: w.id } })
             }}
             onOpenSession={(sid) => {
               rememberChatWorkspace(w.id)
@@ -232,11 +225,8 @@ function ChatWorkspaceRow(props: ChatWorkspaceRowProps): ReactElement {
   const displayName = w.displayName?.trim()
   const subtitle = displayName && displayName !== props.label ? displayName : null
   const orderedSessions = useMemo(
-    () => orderSessionsForSidebar(
-      w.sessions,
-      props.selection?.wsId === w.id ? props.selection.sessionId : null,
-    ),
-    [w.sessions, w.id, props.selection],
+    () => orderSessionsForSidebar(w.sessions),
+    [w.sessions],
   )
   const sessionListRef = useReorderMotion<HTMLDivElement>(
     orderedSessions.map((session) => session.id),

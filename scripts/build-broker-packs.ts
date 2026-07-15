@@ -46,7 +46,16 @@ try {
 
     const file = brokerPackArchiveFileName(packageJson.version, engine)
     const archivePath = resolve(outDir, file)
-    await tar.c({ gzip: true, cwd: deployRoot, file: archivePath, portable: true }, ['.'])
+    // tar's async file writer can leave an unresolved top-level await on
+    // Windows after pnpm deploy exits. Pack assembly is intentionally serial,
+    // so use the documented synchronous file mode for a deterministic write.
+    tar.c({
+      gzip: true,
+      cwd: deployRoot,
+      file: archivePath,
+      portable: true,
+      sync: true,
+    }, ['.'])
     const archiveStat = await stat(archivePath)
     packs.push({
       engine,

@@ -5,7 +5,6 @@ import { createReadStream } from 'node:fs'
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, resolve } from 'node:path'
-import { spawnSync } from 'node:child_process'
 import * as tar from 'tar'
 import {
   BROKER_PACK_API_VERSION,
@@ -19,7 +18,7 @@ import {
   type BrokerPackRequirement,
   type BrokerPackReleaseCatalog,
 } from '../src/core/broker-pack-catalog.js'
-import { composePnpmCommand } from './pnpm-command.mjs'
+import { runPnpmSync } from './pnpm-command.mjs'
 
 const repoRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(await readFile(resolve(repoRoot, 'package.json'), 'utf8')) as { version: string }
@@ -47,7 +46,16 @@ try {
 
     const file = brokerPackArchiveFileName(packageJson.version, engine)
     const archivePath = resolve(outDir, file)
-    await tar.c({ gzip: true, cwd: deployRoot, file: archivePath, portable: true }, ['.'])
+    // tar's async file writer can leave an unresolved top-level await on
+    // Windows after pnpm deploy exits. Pack assembly is intentionally serial,
+    // so use the documented synchronous file mode for a deterministic write.
+    tar.c({
+      gzip: true,
+      cwd: deployRoot,
+      file: archivePath,
+      portable: true,
+      sync: true,
+    }, ['.'])
     const archiveStat = await stat(archivePath)
     packs.push({
       engine,
@@ -78,12 +86,12 @@ try {
 }
 
 function deployPackage(packageName: string, target: string): void {
-  const command = composePnpmCommand([
+  const result = runPnpmSync([
+    '--config.node-linker=hoisted',
     '--config.inject-workspace-packages=true',
     '--filter', packageName,
     'deploy', '--prod', target,
-  ])
-  const result = spawnSync(command.command, command.args, {
+  ], {
     cwd: repoRoot,
     stdio: 'inherit',
     env: process.env,
